@@ -1,119 +1,186 @@
-const playerName = document.querySelector('#player-name');
-const playerRank = document.querySelector('#player-rank');
-const playerRating = document.querySelector('#player-rating');
-const playerWins = document.querySelector('#player-wins');
-const playerLosses = document.querySelector('#player-losses');
-const playerWinRate = document.querySelector('#player-winrate');
-const playerGames = document.querySelector('#player-games');
-const historyChartCanvas = document.querySelector('#history-chart');
-const headToHeadBody = document.querySelector('#head-to-head-table tbody');
+const params = new URLSearchParams(location.search);
+const playerId = params.get('id');
 
-function getPlayerIdFromQuery() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('playerId');
+if (!playerId) {
+  document.getElementById('profile-content').innerHTML = '<p class="empty-state">No player specified.</p>';
+} else {
+  loadProfile();
 }
 
-function drawChart(history) {
-  const ctx = historyChartCanvas.getContext('2d');
-  const width = historyChartCanvas.width;
-  const height = historyChartCanvas.height;
-  ctx.clearRect(0, 0, width, height);
+async function loadProfile() {
+  const [playerRes, historyRes, matchesRes] = await Promise.all([
+    fetch(`/api/players/${playerId}`),
+    fetch(`/api/players/${playerId}/history`),
+    fetch(`/api/players/${playerId}/matches`),
+  ]);
 
-  if (!history.length) {
-    ctx.fillStyle = '#2c3e50';
-    ctx.font = '16px Arial';
-    ctx.fillText('No rating history available yet.', 20, 50);
+  if (!playerRes.ok) {
+    document.getElementById('profile-content').innerHTML = '<p class="empty-state">Player not found.</p>';
     return;
   }
 
-  const ratings = history.map(item => item.rating);
-  const dates = history.map(item => item.date.slice(0, 10));
-  const minRating = Math.min(...ratings);
-  const maxRating = Math.max(...ratings);
-  const xStep = width / (ratings.length - 1 || 1);
-  const yRange = maxRating - minRating || 1;
+  const player = await playerRes.json();
+  const history = await historyRes.json();
+  const matches = await matchesRes.json();
 
-  ctx.strokeStyle = '#2c3e50';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
+  document.title = `${player.name} – Pickleball ELO`;
 
-  ratings.forEach((rating, index) => {
-    const x = index * xStep;
-    const y = height - ((rating - minRating) / yRange) * (height - 40) - 20;
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
-  ctx.stroke();
+  const rankRes = await fetch('/api/rankings');
+  const rankings = await rankRes.json();
+  const rank = rankings.findIndex(p => p.id === player.id) + 1;
 
-  ctx.fillStyle = '#2c3e50';
-  ctx.font = '12px Arial';
-  ratings.forEach((rating, index) => {
-    const x = index * xStep;
-    const y = height - ((rating - minRating) / yRange) * (height - 40) - 20;
-    ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillText(`${rating}`, x + 6, y - 8);
-  });
-
-  ctx.fillStyle = '#7f8c8d';
-  ctx.textAlign = 'center';
-  dates.forEach((label, index) => {
-    const x = index * xStep;
-    ctx.fillText(label, x, height - 4);
-  });
+  renderProfile(player, rank, history, matches);
 }
 
-function renderHeadToHead(records) {
-  headToHeadBody.innerHTML = '';
-  if (!records.length) {
-    headToHeadBody.innerHTML = '<tr><td colspan="3">No head-to-head data yet.</td></tr>';
-    return;
-  }
+function renderProfile(player, rank, history, matches) {
+  const initials = player.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
 
-  records.forEach(record => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${record.opponentId}</td>
-      <td>${record.wins}</td>
-      <td>${record.losses}</td>
+  document.getElementById('profile-content').innerHTML = `
+    <div class="profile-header">
+      <div class="avatar">${initials}</div>
+      <div>
+        <h1>${escHtml(player.name)}</h1>
+        <h2>Rank ${rankLabel}</h2>
+      </div>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-value">${player.rating}</div>
+        <div class="stat-label">ELO Rating</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--win)">${player.win_rate}%</div>
+        <div class="stat-label">Win Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${player.wins}</div>
+        <div class="stat-label">Wins</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--loss)">${player.losses}</div>
+        <div class="stat-label">Losses</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Rating History (Last 30 Days)</h3>
+        <div class="chart-container">
+          <canvas id="rating-chart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Recent Matches</h3>
+        <div id="matches-list">${renderMatches(matches, player.id)}</div>
+      </div>
+    </div>
+  `;
+
+  renderChart(player, history);
+}
+
+function renderMatches(matches, playerId) {
+  if (!matches.length) return '<p class="empty-state">No matches yet.</p>';
+
+  return matches.map(m => {
+    const won = m.winner_id === playerId;
+    const opponent = won ? m.loser_name : m.winner_name;
+    const ratingBefore = won ? m.winner_rating_before : m.loser_rating_before;
+    const ratingAfter = won ? m.winner_rating_after : m.loser_rating_after;
+    const delta = Math.round((ratingAfter - ratingBefore) * 10) / 10;
+    const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+    const date = new Date(m.played_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const scoreStr = (m.winner_score != null && m.loser_score != null)
+      ? `<span class="match-score">${won ? m.winner_score : m.loser_score}–${won ? m.loser_score : m.winner_score}</span>`
+      : '';
+
+    return `
+      <div class="match-item">
+        <div>
+          <span class="match-result ${won ? 'win' : 'loss'}">${won ? 'WIN' : 'LOSS'}</span>
+          ${scoreStr}
+          <span style="margin-left:0.5rem">vs <a href="/profile.html?id=${won ? m.loser_id : m.winner_id}" style="color:var(--text);text-decoration:none;font-weight:600">${escHtml(opponent)}</a></span>
+        </div>
+        <div style="text-align:right">
+          <span class="rating-change ${delta >= 0 ? 'up' : 'down'}">${deltaStr}</span>
+          <span class="text-muted" style="margin-left:0.6rem;font-size:0.78rem">${date}</span>
+        </div>
+      </div>
     `;
-    headToHeadBody.appendChild(row);
+  }).join('');
+}
+
+function renderChart(player, history) {
+  const ctx = document.getElementById('rating-chart').getContext('2d');
+
+  // Build chart data: start point + each match result
+  const labels = [];
+  const data = [];
+
+  if (history.length === 0) {
+    labels.push('Now');
+    data.push(player.rating);
+  } else {
+    // Add a "start" point showing rating before first match in range
+    const firstMatch = history[0];
+    labels.push('');
+    data.push(null); // placeholder filled below
+
+    history.forEach((h, i) => {
+      const d = new Date(h.played_at);
+      labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      data.push(h.rating);
+    });
+
+    // Fill the first placeholder with a reasonable start (extrapolated)
+    data[0] = data[1] ?? player.rating;
+  }
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ELO Rating',
+        data,
+        borderColor: '#6c63ff',
+        backgroundColor: 'rgba(108,99,255,0.12)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#6c63ff',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` Rating: ${ctx.parsed.y}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#7b82a8', font: { size: 11 } },
+          grid: { color: '#2e3248' },
+        },
+        y: {
+          ticks: { color: '#7b82a8', font: { size: 11 } },
+          grid: { color: '#2e3248' },
+        },
+      },
+    },
   });
 }
 
-async function initProfile() {
-  const playerId = getPlayerIdFromQuery();
-  if (!playerId) {
-    playerName.textContent = 'Player ID is missing';
-    return;
-  }
-
-  const response = await fetch(`/api/players/${playerId}`);
-  if (!response.ok) {
-    playerName.textContent = 'Unable to load player profile';
-    return;
-  }
-
-  const { player, history } = await response.json();
-  playerName.textContent = player.name;
-  playerRank.textContent = player.rank;
-  playerRating.textContent = player.rating;
-  playerWins.textContent = player.wins;
-  playerLosses.textContent = player.losses;
-  playerWinRate.textContent = player.winRate;
-  playerGames.textContent = player.totalGames;
-  drawChart(history);
-
-  const headResponse = await fetch(`/api/players/${playerId}/head-to-head`);
-  const headRecords = headResponse.ok ? await headResponse.json() : [];
-  renderHeadToHead(headRecords);
+function escHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
-initProfile().catch(error => {
-  console.error(error);
-  playerName.textContent = 'Unable to load player profile';
-});

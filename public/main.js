@@ -1,138 +1,157 @@
-const winner1Select = document.querySelector('#winner1');
-const winner2Select = document.querySelector('#winner2');
-const loser1Select = document.querySelector('#loser1');
-const loser2Select = document.querySelector('#loser2');
-const matchForm = document.querySelector('#match-form');
-const addPlayerForm = document.querySelector('#add-player-form');
-const playerNameInput = document.querySelector('#player-name');
-const addMessage = document.querySelector('#add-message');
-const message = document.querySelector('#form-message');
-const rankingsTableBody = document.querySelector('#rankings-table tbody');
+let players = [];
 
-async function fetchPlayers() {
-  const response = await fetch('/api/players');
-  return response.json();
-}
-
-function buildPlayerOptions(players) {
-  winner1Select.innerHTML = '';
-  winner2Select.innerHTML = '';
-  loser1Select.innerHTML = '';
-  loser2Select.innerHTML = '';
-
-  players.forEach(player => {
-    const option = document.createElement('option');
-    option.value = player.id;
-    option.textContent = `${player.name} (${player.rating})`;
-    winner1Select.appendChild(option.cloneNode(true));
-    winner2Select.appendChild(option.cloneNode(true));
-    loser1Select.appendChild(option.cloneNode(true));
-    loser2Select.appendChild(option.cloneNode(true));
-  });
+async function fetchRankings() {
+  const res = await fetch('/api/rankings');
+  players = await res.json();
+  renderRankings(players);
+  populateSelects(players);
 }
 
 function renderRankings(players) {
-  rankingsTableBody.innerHTML = '';
-  players.forEach(player => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${player.rank}</td>
-      <td>${player.name}</td>
-      <td>${player.rating}</td>
-      <td>${player.wins}</td>
-      <td>${player.losses}</td>
-      <td>${player.winRate}%</td>
-      <td><a href="profile.html?playerId=${player.id}">View</a></td>
+  const container = document.getElementById('rankings-container');
+  if (!players.length) {
+    container.innerHTML = '<p class="empty-state">No players yet. Add some players to get started!</p>';
+    return;
+  }
+
+  const rows = players.map((p, i) => {
+    const rank = i + 1;
+    const rankClass = rank <= 3 ? `rank-${rank}` : '';
+    return `
+      <tr>
+        <td><span class="rank-num ${rankClass}">${rank}</span></td>
+        <td><a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a></td>
+        <td><span class="rating-badge">${p.rating}</span></td>
+        <td class="win-rate">${p.win_rate}%</td>
+        <td class="text-muted">${p.wins}W – ${p.losses}L</td>
+        <td>${p.wins + p.losses}</td>
+        <td>
+          <button class="btn-delete" onclick="confirmDelete(${p.id}, '${escHtml(p.name)}')" title="Delete player">✕</button>
+        </td>
+      </tr>
     `;
-    rankingsTableBody.appendChild(row);
+  }).join('');
+
+  container.innerHTML = `
+    <table class="rankings-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Rating</th>
+          <th>Win Rate</th>
+          <th>Record</th>
+          <th>Games</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function populateSelects(players) {
+  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
+  const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
+  const opts = players.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+  ids.forEach(id => {
+    document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
+    if (saved[id]) document.getElementById(id).value = saved[id];
   });
 }
 
-async function refresh() {
-  const players = await fetchPlayers();
-  buildPlayerOptions(players);
-  renderRankings(players);
-}
+document.getElementById('match-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const w1 = +document.getElementById('winner1').value;
+  const w2 = +document.getElementById('winner2').value;
+  const l1 = +document.getElementById('loser1').value;
+  const l2 = +document.getElementById('loser2').value;
 
-async function createPlayer(name) {
-  const response = await fetch('/api/players', {
+  if (!w1 || !w2 || !l1 || !l2) return showToast('Select all four players', 'error');
+  const all = [w1, w2, l1, l2];
+  if (new Set(all).size !== 4) return showToast('All four players must be different', 'error');
+
+  const ws = document.getElementById('winner-score').value;
+  const ls = document.getElementById('loser-score').value;
+
+  const res = await fetch('/api/matches', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
+    body: JSON.stringify({ winner_ids: [w1, w2], loser_ids: [l1, l2], winner_score: ws, loser_score: ls }),
   });
-  const result = await response.json();
-  if (!response.ok) {
-    throw result;
-  }
-  return result;
-}
 
-function getTeamSelections() {
-  return {
-    winnerIds: [parseInt(winner1Select.value, 10), parseInt(winner2Select.value, 10)],
-    loserIds: [parseInt(loser1Select.value, 10), parseInt(loser2Select.value, 10)]
-  };
-}
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
 
-function validateTeamSelection(winnerIds, loserIds) {
-  const allIds = [...winnerIds, ...loserIds];
-  if (allIds.some(id => Number.isNaN(id))) {
-    return 'Please select two players for each team.';
-  }
-  const uniqueCount = new Set(allIds).size;
-  if (uniqueCount !== allIds.length) {
-    return 'Each player must appear only once in the match.';
-  }
-  return null;
-}
+  const wNames = data.winners.map(p => p.name).join(' & ');
+  const lNames = data.losers.map(p => p.name).join(' & ');
+  showToast(`${wNames} beat ${lNames}`, 'success');
+  document.getElementById('match-form').reset();
+  fetchRankings();
+});
 
-matchForm.addEventListener('submit', async event => {
-  event.preventDefault();
-  const { winnerIds, loserIds } = getTeamSelections();
-  const validationError = validateTeamSelection(winnerIds, loserIds);
-  if (validationError) {
-    message.textContent = validationError;
-    return;
-  }
+document.getElementById('add-player-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('player-name').value.trim();
+  if (!name) return;
 
-  const response = await fetch('/api/matches', {
+  const res = await fetch('/api/players', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ winnerIds, loserIds })
+    body: JSON.stringify({ name }),
   });
 
-  const result = await response.json();
-  if (!response.ok) {
-    message.textContent = result.error || 'Unable to submit match.';
-    return;
-  }
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
 
-  message.textContent = 'Match recorded! Rankings updated.';
-  await refresh();
+  showToast(`${name} added!`, 'success');
+  document.getElementById('player-name').value = '';
+  fetchRankings();
 });
 
-if (addPlayerForm) {
-  addPlayerForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    const name = playerNameInput.value.trim();
-    if (!name) {
-      addMessage.textContent = 'Please enter a player name.';
-      return;
-    }
+// Delete player with confirmation modal
+let pendingDeleteId = null;
 
-    try {
-      const result = await createPlayer(name);
-      playerNameInput.value = '';
-      addMessage.textContent = `${result.name} added successfully.`;
-      await refresh();
-    } catch (error) {
-      console.error(error);
-      addMessage.textContent = error?.error || 'Unable to add player.';
-    }
-  });
+function confirmDelete(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('modal-msg').textContent = `Delete ${name}? This will also remove all their match history.`;
+  document.getElementById('confirm-modal').classList.add('show');
 }
 
-refresh().catch(error => {
-  console.error(error);
-  message.textContent = 'Unable to load players. Try restarting the server.';
+document.getElementById('modal-confirm').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  document.getElementById('confirm-modal').classList.remove('show');
+
+  const res = await fetch(`/api/players/${pendingDeleteId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+
+  showToast('Player deleted', 'success');
+  pendingDeleteId = null;
+  fetchRankings();
 });
+
+document.getElementById('modal-cancel').addEventListener('click', () => {
+  pendingDeleteId = null;
+  document.getElementById('confirm-modal').classList.remove('show');
+});
+
+document.getElementById('confirm-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('confirm-modal')) {
+    pendingDeleteId = null;
+    document.getElementById('confirm-modal').classList.remove('show');
+  }
+});
+
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => { t.className = 'toast'; }, 3500);
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+fetchRankings();
