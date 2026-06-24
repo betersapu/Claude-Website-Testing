@@ -601,3 +601,59 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
 }
 .btn-danger { background: var(--loss); color: #fff; }
 .btn-danger:hover { background: #ff3355; }
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+
+  /* Nav */
+  nav { padding: 0 1rem; gap: 1.2rem; }
+  nav .logo { font-size: 1rem; }
+
+  /* Container */
+  .container { padding: 1rem 0.85rem; }
+
+  /* Tighten table padding */
+  .rankings-table td,
+  .rankings-table th { padding: 0.55rem 0.5rem; }
+  .rankings-table td { word-break: break-word; }
+
+  /* ── Leaderboard: keep #, Player, Rating — hide Win Rate, Record, Games, Form */
+  #rankings-container .rankings-table th:nth-child(n+4),
+  #rankings-container .rankings-table td:nth-child(n+4) { display: none; }
+
+  /* ── Recent games: hide Date column from header + match rows (not tags row) */
+  #recent-container .rankings-table thead th:first-child { display: none; }
+  #recent-container .rankings-table tbody tr:not(.tags-row) td:first-child { display: none; }
+
+  /* Tags row: keep tags (col 1) and vs (col 3), hide elo deltas (col 2 & 4) */
+  #recent-container .tags-row td:nth-child(2),
+  #recent-container .tags-row td:nth-child(4) { display: none; }
+
+  /* Tags — slightly smaller */
+  .game-tag { font-size: 0.65rem; padding: 0.15rem 0.45rem; }
+  .tags-wrap { gap: 0.25rem; }
+  .tags-row td { padding: 0 0.5rem 0.5rem; }
+
+  /* Profile stat grid: 2 columns */
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .stat-value { font-size: 1.3rem; }
+
+  /* Profile header */
+  .profile-header { gap: 1rem; margin-bottom: 1.25rem; }
+  .avatar { width: 48px; height: 48px; font-size: 1.2rem; }
+  h1 { font-size: 1.4rem; }
+
+  /* Chart shorter on mobile */
+  .chart-container { height: 180px; }
+
+  /* Card padding */
+  .card { padding: 1rem; }
+
+  /* Match history items stack */
+  .match-item { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+  .match-item > div:last-child { align-self: flex-end; }
+
+  /* Tooltips don't work on touch */
+  .game-tag[data-tip]:hover::after,
+  .game-tag[data-tip]:hover::before { display: none; }
+}
