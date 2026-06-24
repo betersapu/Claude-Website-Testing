@@ -602,6 +602,37 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
 .btn-danger { background: var(--loss); color: #fff; }
 .btn-danger:hover { background: #ff3355; }
 
+/* ── Recent games: right-align losers column ────────────────────────────── */
+.recent-table th:nth-child(4),
+.recent-table td:nth-child(4) { text-align: right; }
+
+/* ── Recent games mobile cards ───────────────────────────────────────────── */
+.recent-cards { display: none; }
+
+.recent-card {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.recent-card:last-child { border-bottom: none; }
+.recent-card:hover { background: var(--surface2); }
+
+.recent-card-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.recent-card-team { flex: 1; }
+.recent-card-losers { color: var(--text-muted); text-align: right; }
+.recent-card-score { flex-shrink: 0; text-align: center; }
+
+.recent-card-tags {
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
 /* ── Mobile ─────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
 
@@ -621,18 +652,13 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
   #rankings-container .rankings-table th:nth-child(n+4),
   #rankings-container .rankings-table td:nth-child(n+4) { display: none; }
 
-  /* ── Recent games: hide Date column from header + match rows (not tags row) */
-  #recent-container .rankings-table thead th:first-child { display: none; }
-  #recent-container .rankings-table tbody tr:not(.tags-row) td:first-child { display: none; }
-
-  /* Tags row: keep tags (col 1) and vs (col 3), hide elo deltas (col 2 & 4) */
-  #recent-container .tags-row td:nth-child(2),
-  #recent-container .tags-row td:nth-child(4) { display: none; }
+  /* ── Recent games: swap table for cards */
+  .recent-table { display: none; }
+  .recent-cards { display: block; }
 
   /* Tags — slightly smaller */
   .game-tag { font-size: 0.65rem; padding: 0.15rem 0.45rem; }
   .tags-wrap { gap: 0.25rem; }
-  .tags-row td { padding: 0 0.5rem 0.5rem; }
 
   /* Profile stat grid: 2 columns */
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
@@ -656,4 +682,21 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
   /* Tooltips don't work on touch */
   .game-tag[data-tip]:hover::after,
   .game-tag[data-tip]:hover::before { display: none; }
+
+  /* ── Admin: Players table — hide Wins, Losses, Games */
+  #players-table .rankings-table th:nth-child(3),
+  #players-table .rankings-table td:nth-child(3),
+  #players-table .rankings-table th:nth-child(4),
+  #players-table .rankings-table td:nth-child(4),
+  #players-table .rankings-table th:nth-child(6),
+  #players-table .rankings-table td:nth-child(6) { display: none; }
+
+  /* ── Admin: Match history table — hide Date and Rating Δ */
+  #matches-table .rankings-table th:nth-child(1),
+  #matches-table .rankings-table td:nth-child(1),
+  #matches-table .rankings-table th:nth-child(5),
+  #matches-table .rankings-table td:nth-child(5) { display: none; }
+
+  /* Edit/delete buttons: keep them usable */
+  .btn-edit, .btn-delete { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
 }
