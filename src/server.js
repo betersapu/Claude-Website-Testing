@@ -4,7 +4,7 @@ const db = require('./db');
 const { Glicko2 } = require('glicko2');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));

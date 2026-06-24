@@ -1,7 +1,11 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const db = new sqlite3.Database(path.join(__dirname, '../elo.db'));
+// On Railway, set DATABASE_PATH to a path inside a mounted volume (e.g. /data/elo.db)
+// so the database survives redeploys. Locally it defaults to elo.db in the project root.
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../elo.db');
+
+const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
   db.run(`
