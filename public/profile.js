@@ -34,9 +34,60 @@ async function loadProfile() {
   renderProfile(player, rank, history, matches, partners);
 }
 
+function computeBadges(player, rank, matches, history) {
+  const badges = [];
+  const total = player.wins + player.losses;
+
+  // Result sequence newest→oldest
+  const results = matches.map(m => m.winner_id === player.id ? 'W' : 'L');
+
+  // 🔥 Hot streak / ❄️ Cold streak
+  const streak = player.streak || 0;
+  if (streak >= 3)  badges.push({ label: `🔥 ${streak}-Win Streak`,          cls: 'badge-hot',     tip: `On a ${streak}-game winning streak` });
+  if (streak <= -3) badges.push({ label: `❄️ ${Math.abs(streak)}-Loss Streak`, cls: 'badge-cold',    tip: `On a ${Math.abs(streak)}-game losing streak` });
+
+  // 👑 Top Dog
+  if (rank === 1) badges.push({ label: '👑 Top Dog', cls: 'badge-gold', tip: 'Currently ranked #1' });
+
+  // Chain wins / tilts (win-after-win rate)
+  let waw = 0, wawTotal = 0, wal = 0, walTotal = 0;
+  for (let i = 0; i < results.length - 1; i++) {
+    if (results[i + 1] === 'W') { wawTotal++; if (results[i] === 'W') waw++; }
+    else                         { walTotal++; if (results[i] === 'W') wal++; }
+  }
+  if (wawTotal >= 4) {
+    const rate = waw / wawTotal;
+    if (rate >= 0.60) badges.push({ label: '🔗 Chain Wins', cls: 'badge-chain', tip: `Wins ${Math.round(rate * 100)}% of games after a win` });
+    if (rate <= 0.40) badges.push({ label: '📉 Tilts',      cls: 'badge-tilt',  tip: `Only wins ${Math.round(rate * 100)}% of games after a win` });
+  }
+
+  // 💪 Bounce Back
+  if (walTotal >= 4 && wal / walTotal >= 0.60)
+    badges.push({ label: '💪 Bounce Back', cls: 'badge-bounce', tip: `Wins ${Math.round(wal / walTotal * 100)}% of games after a loss` });
+
+  // 📈 Rising / 📉 Falling
+  if (history.length >= 3) {
+    const gained = player.rating - history[0].rating_before;
+    if (gained >= 50)  badges.push({ label: '📈 Rising',  cls: 'badge-rising',  tip: `Gained ${Math.round(gained)} rating in the last 30 days` });
+    if (gained <= -50) badges.push({ label: '📉 Falling', cls: 'badge-falling', tip: `Lost ${Math.round(Math.abs(gained))} rating in the last 30 days` });
+  }
+
+  // 🏆 Veteran
+  if (total >= 50) badges.push({ label: '🏆 Veteran', cls: 'badge-vet', tip: `Played ${total} total games` });
+
+  return badges;
+}
+
 function renderProfile(player, rank, history, matches, partners) {
   const initials = player.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+
+  const badges = computeBadges(player, rank, matches, history);
+  const badgesHtml = badges.length
+    ? `<div class="player-badges" style="margin-bottom:1.5rem">
+        ${badges.map(b => `<span class="player-badge ${b.cls}" data-tip="${b.tip}">${b.label}</span>`).join('')}
+      </div>`
+    : '';
 
   document.getElementById('profile-content').innerHTML = `
     <div class="profile-header">
@@ -46,6 +97,8 @@ function renderProfile(player, rank, history, matches, partners) {
         <h2>Rank ${rankLabel}</h2>
       </div>
     </div>
+
+    ${badgesHtml}
 
     <div class="stat-grid">
       <div class="stat-card">
@@ -68,15 +121,22 @@ function renderProfile(player, rank, history, matches, partners) {
         <div class="stat-value" style="color:var(--loss)">${player.losses}</div>
         <div class="stat-label">Losses</div>
       </div>
-      <div class="stat-card">
-        ${(() => {
-          const s = player.streak || 0;
-          if (s === 0) return `<div class="stat-value text-muted">—</div><div class="stat-label">Streak</div>`;
-          const color = s > 0 ? 'var(--win)' : 'var(--loss)';
-          const label = s > 0 ? `W${s}` : `L${Math.abs(s)}`;
-          return `<div class="stat-value" style="color:${color}">${label}</div><div class="stat-label">Streak</div>`;
-        })()}
-      </div>
+      ${(() => {
+        const fav = partners.length
+          ? partners.reduce((best, p) => p.wins > best.wins ? p : best)
+          : null;
+        return fav
+          ? `<div class="stat-card">
+              <div class="stat-value" style="font-size:1.1rem;line-height:1.3">
+                <a href="/profile.html?id=${fav.partner_id}" class="player-link">${escHtml(fav.partner_name)}</a>
+              </div>
+              <div class="stat-label">Fav. Partner</div>
+            </div>`
+          : `<div class="stat-card">
+              <div class="stat-value text-muted">—</div>
+              <div class="stat-label">Fav. Partner</div>
+            </div>`;
+      })()}
     </div>
 
     <div class="grid-2">
