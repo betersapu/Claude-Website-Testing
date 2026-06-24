@@ -8,7 +8,7 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS players (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      rating REAL DEFAULT 1000,
+      rating REAL DEFAULT 1500,
       wins INTEGER DEFAULT 0,
       losses INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
