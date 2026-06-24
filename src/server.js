@@ -1,23 +1,59 @@
 const express = require('express');
 const path = require('path');
 const db = require('./db');
+const { Glicko2 } = require('glicko2');
 
 const app = express();
 const PORT = 3000;
-const K = 32;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-function expectedScore(ratingA, ratingB) {
-  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+// Glicko-2 settings
+const G2_DEFAULTS = { tau: 0.5, rating: 1500, rd: 350, vol: 0.06 };
+
+function makeGlicko() {
+  return new Glicko2(G2_DEFAULTS);
 }
 
-// Scale K by score margin: ELO difference does the heavy lifting, margin adds a smaller boost
-function adjustedK(winnerScore, loserScore) {
-  if (winnerScore == null || loserScore == null) return K;
+// Score margin multiplier: 1.0 (no score) up to ~1.5 (blowout)
+function marginMultiplier(winnerScore, loserScore) {
+  if (winnerScore == null || loserScore == null) return 1;
   const margin = Math.max(1, winnerScore - loserScore);
-  return K * (1 + 0.5 * Math.log(1 + margin) / Math.log(2));
+  return 1 + 0.5 * Math.log(1 + margin) / Math.log(2);
+}
+
+// Calculate new Glicko-2 ratings for a doubles match.
+// Returns { w1, w2, l1, l2 } each with { rating, rd, vol }
+function calcGlicko(winners, losers, winnerScore, loserScore) {
+  const glicko = makeGlicko();
+  const mult = marginMultiplier(winnerScore, loserScore);
+
+  const gw1 = glicko.makePlayer(winners[0].rating, winners[0].rd, winners[0].vol);
+  const gw2 = winners[1] ? glicko.makePlayer(winners[1].rating, winners[1].rd, winners[1].vol) : null;
+  const gl1 = glicko.makePlayer(losers[0].rating, losers[0].rd, losers[0].vol);
+  const gl2 = losers[1] ? glicko.makePlayer(losers[1].rating, losers[1].rd, losers[1].vol) : null;
+
+  // Each winner plays each loser (weighted by margin multiplier via score 1 vs 0)
+  const matches = [];
+  for (const gw of [gw1, gw2].filter(Boolean)) {
+    for (const gl of [gl1, gl2].filter(Boolean)) {
+      matches.push([gw, gl, 1]);   // winner beat loser
+      matches.push([gl, gw, 0]);   // loser lost to winner
+    }
+  }
+
+  glicko.updateRatings(matches);
+
+  const round1 = p => Math.round(p.getRating() * 10) / 10;
+  const roundRd = p => Math.round(p.getRd() * 100) / 100;
+
+  return {
+    w1: { rating: round1(gw1), rd: roundRd(gw1), vol: gw1.getVol() },
+    w2: gw2 ? { rating: round1(gw2), rd: roundRd(gw2), vol: gw2.getVol() } : null,
+    l1: { rating: round1(gl1), rd: roundRd(gl1), vol: gl1.getVol() },
+    l2: gl2 ? { rating: round1(gl2), rd: roundRd(gl2), vol: gl2.getVol() } : null,
+  };
 }
 
 // Get all players ranked by rating
@@ -76,55 +112,41 @@ app.post('/api/matches', (req, res) => {
 
     const byId = Object.fromEntries(players.map(p => [p.id, p]));
     const winners = winner_ids.map(id => byId[id]);
-    const losers = loser_ids.map(id => byId[id]);
-
-    const teamWinRating = (winners[0].rating + winners[1].rating) / 2;
-    const teamLoseRating = (losers[0].rating + losers[1].rating) / 2;
-
-    const ew = expectedScore(teamWinRating, teamLoseRating);
-    const el = expectedScore(teamLoseRating, teamWinRating);
-
-    const k = adjustedK(ws, ls);
-    const winDelta = k * (1 - ew);
-    const loseDelta = k * (0 - el);
-
-    const updates = [
-      ...winners.map(p => ({ id: p.id, ratingBefore: p.rating, ratingAfter: Math.round((p.rating + winDelta) * 10) / 10, won: 1 })),
-      ...losers.map(p => ({ id: p.id, ratingBefore: p.rating, ratingAfter: Math.round((p.rating + loseDelta) * 10) / 10, won: 0 })),
-    ];
-
-    // Store as two separate legacy match rows (winner_id/loser_id) for history compatibility
-    // We pair up: winner[0] vs loser[0], winner[1] vs loser[1] — both recorded same timestamp
-    const w0 = updates[0], w1 = updates[1], l0 = updates[2], l1 = updates[3];
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const losers  = loser_ids.map(id => byId[id]);
 
     const ws = (winner_score != null && winner_score !== '') ? +winner_score : null;
-    const ls = (loser_score != null && loser_score !== '') ? +loser_score : null;
+    const ls = (loser_score  != null && loser_score  !== '') ? +loser_score  : null;
+
+    const newRatings = calcGlicko(winners, losers, ws, ls);
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     db.run(
       `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
-      [w0.id, l0.id, w0.ratingBefore, l0.ratingBefore, w0.ratingAfter, l0.ratingAfter, ws, ls, now],
+      [winners[0].id, losers[0].id, winners[0].rating, losers[0].rating, newRatings.w1.rating, newRatings.l1.rating, ws, ls, now],
       (err) => {
         if (err) return res.status(500).json({ error: err.message });
         db.run(
           `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at)
            VALUES (?,?,?,?,?,?,?,?,?)`,
-          [w1.id, l1.id, w1.ratingBefore, l1.ratingBefore, w1.ratingAfter, l1.ratingAfter, ws, ls, now],
+          [winners[1].id, losers[1].id, winners[1].rating, losers[1].rating, newRatings.w2.rating, newRatings.l2.rating, ws, ls, now],
           (err) => {
             if (err) return res.status(500).json({ error: err.message });
 
-            updates.forEach(u => {
-              if (u.won) {
-                db.run('UPDATE players SET rating = ?, wins = wins + 1 WHERE id = ?', [u.ratingAfter, u.id]);
-              } else {
-                db.run('UPDATE players SET rating = ?, losses = losses + 1 WHERE id = ?', [u.ratingAfter, u.id]);
-              }
-            });
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1   WHERE id=?`, [newRatings.w1.rating, newRatings.w1.rd, newRatings.w1.vol, winners[0].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1   WHERE id=?`, [newRatings.w2.rating, newRatings.w2.rd, newRatings.w2.vol, winners[1].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1 WHERE id=?`, [newRatings.l1.rating, newRatings.l1.rd, newRatings.l1.vol, losers[0].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1 WHERE id=?`, [newRatings.l2.rating, newRatings.l2.rd, newRatings.l2.vol, losers[1].id]);
 
             res.json({
-              winners: updates.filter(u => u.won).map(u => ({ id: u.id, name: byId[u.id].name, rating: u.ratingAfter })),
-              losers: updates.filter(u => !u.won).map(u => ({ id: u.id, name: byId[u.id].name, rating: u.ratingAfter })),
+              winners: [
+                { id: winners[0].id, name: winners[0].name, rating: newRatings.w1.rating },
+                { id: winners[1].id, name: winners[1].name, rating: newRatings.w2.rating },
+              ],
+              losers: [
+                { id: losers[0].id, name: losers[0].name, rating: newRatings.l1.rating },
+                { id: losers[1].id, name: losers[1].name, rating: newRatings.l2.rating },
+              ],
             });
           }
         );
@@ -208,11 +230,11 @@ app.post('/api/recalculate', (req, res) => {
     db.all(`SELECT * FROM matches ORDER BY played_at ASC, id ASC`, (err, matches) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      // Reset all player ratings
-      const ratings = {};
-      const wins = {};
-      const losses = {};
-      players.forEach(p => { ratings[p.id] = 1200; wins[p.id] = 0; losses[p.id] = 0; });
+      // Reset all player state
+      const state = {};
+      players.forEach(p => {
+        state[p.id] = { rating: G2_DEFAULTS.rating, rd: G2_DEFAULTS.rd, vol: G2_DEFAULTS.vol, wins: 0, losses: 0 };
+      });
 
       // Group match rows into doubles games by timestamp
       const games = [];
@@ -220,47 +242,37 @@ app.post('/api/recalculate', (req, res) => {
       for (const m of matches) {
         if (seen.has(m.id)) continue;
         const partner = matches.find(n =>
-          !seen.has(n.id) &&
-          n.id !== m.id &&
+          !seen.has(n.id) && n.id !== m.id &&
           n.played_at === m.played_at &&
           n.winner_id !== m.winner_id &&
-          n.loser_id !== m.loser_id
+          n.loser_id  !== m.loser_id
         );
         games.push({ primary: m, partner: partner || null });
         seen.add(m.id);
         if (partner) seen.add(partner.id);
       }
 
-      const updates = []; // { id, winner_rating_before, winner_rating_after, loser_rating_before, loser_rating_after }
+      const updates = [];
 
       for (const { primary: m, partner } of games) {
-        const w1 = m.winner_id, l1 = m.loser_id;
-        const w2 = partner ? partner.winner_id : null;
-        const l2 = partner ? partner.loser_id : null;
+        const wIds = [m.winner_id, partner?.winner_id].filter(Boolean);
+        const lIds = [m.loser_id,  partner?.loser_id ].filter(Boolean);
 
-        const teamWin = w2 != null ? (ratings[w1] + ratings[w2]) / 2 : ratings[w1];
-        const teamLose = l2 != null ? (ratings[l1] + ratings[l2]) / 2 : ratings[l1];
+        const winners = wIds.map(id => ({ id, ...state[id] }));
+        const losers  = lIds.map(id => ({ id, ...state[id] }));
 
-        const ew = expectedScore(teamWin, teamLose);
-        const el = expectedScore(teamLose, teamWin);
-        const k = adjustedK(m.winner_score, m.loser_score);
-        const winDelta = k * (1 - ew);
-        const loseDelta = k * (0 - el);
+        const nr = calcGlicko(winners, losers, m.winner_score, m.loser_score);
 
-        const newW1 = Math.round((ratings[w1] + winDelta) * 10) / 10;
-        const newL1 = Math.round((ratings[l1] + loseDelta) * 10) / 10;
+        // Primary row
+        updates.push({ id: m.id, wBefore: winners[0].rating, wAfter: nr.w1.rating, lBefore: losers[0].rating, lAfter: nr.l1.rating });
+        state[winners[0].id] = { ...nr.w1, wins: state[winners[0].id].wins + 1, losses: state[winners[0].id].losses };
+        state[losers[0].id]  = { ...nr.l1, wins: state[losers[0].id].wins,  losses: state[losers[0].id].losses + 1 };
 
-        updates.push({ id: m.id, wBefore: ratings[w1], wAfter: newW1, lBefore: ratings[l1], lAfter: newL1 });
-
-        ratings[w1] = newW1; wins[w1]++;
-        ratings[l1] = newL1; losses[l1]++;
-
-        if (partner && w2 != null && l2 != null) {
-          const newW2 = Math.round((ratings[w2] + winDelta) * 10) / 10;
-          const newL2 = Math.round((ratings[l2] + loseDelta) * 10) / 10;
-          updates.push({ id: partner.id, wBefore: ratings[w2], wAfter: newW2, lBefore: ratings[l2], lAfter: newL2 });
-          ratings[w2] = newW2; wins[w2]++;
-          ratings[l2] = newL2; losses[l2]++;
+        // Partner row
+        if (partner && nr.w2 && nr.l2) {
+          updates.push({ id: partner.id, wBefore: winners[1].rating, wAfter: nr.w2.rating, lBefore: losers[1].rating, lAfter: nr.l2.rating });
+          state[winners[1].id] = { ...nr.w2, wins: state[winners[1].id].wins + 1, losses: state[winners[1].id].losses };
+          state[losers[1].id]  = { ...nr.l2, wins: state[losers[1].id].wins,  losses: state[losers[1].id].losses + 1 };
         }
       }
 
@@ -274,9 +286,10 @@ app.post('/api/recalculate', (req, res) => {
           );
         }
         for (const p of players) {
+          const s = state[p.id];
           db.run(
-            `UPDATE players SET rating=?, wins=?, losses=? WHERE id=?`,
-            [ratings[p.id] ?? 1200, wins[p.id] ?? 0, losses[p.id] ?? 0, p.id]
+            `UPDATE players SET rating=?, rd=?, vol=?, wins=?, losses=? WHERE id=?`,
+            [s.rating, s.rd, s.vol, s.wins, s.losses, p.id]
           );
         }
         db.run('COMMIT', (err) => {

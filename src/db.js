@@ -32,9 +32,11 @@ db.serialize(() => {
     )
   `);
 
-  // Migrate existing tables — ignore error if column already exists
+  // Migrations — ignore errors if columns already exist
   db.run(`ALTER TABLE matches ADD COLUMN winner_score INTEGER`, () => {});
   db.run(`ALTER TABLE matches ADD COLUMN loser_score INTEGER`, () => {});
+  db.run(`ALTER TABLE players ADD COLUMN rd REAL DEFAULT 350`, () => {});
+  db.run(`ALTER TABLE players ADD COLUMN vol REAL DEFAULT 0.06`, () => {});
 });
 
 module.exports = db;

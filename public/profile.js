@@ -91,7 +91,7 @@ function renderMatches(matches, playerId) {
     const ratingAfter  = won ? m.winner_rating_after  : m.loser_rating_after;
     const delta = Math.round((ratingAfter - ratingBefore) * 10) / 10;
     const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
-    const date = new Date(m.played_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const date = formatDateTime(m.played_at);
     const scoreStr = (m.winner_score != null && m.loser_score != null)
       ? `<span class="match-score">${won ? m.winner_score : m.loser_score}–${won ? m.loser_score : m.winner_score}</span>`
       : '';
@@ -146,8 +146,7 @@ function renderChart(player, history) {
     data.push(null); // placeholder filled below
 
     history.forEach((h, i) => {
-      const d = new Date(h.played_at);
-      labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      labels.push(formatDateTime(h.played_at));
       data.push(h.rating);
     });
 
@@ -199,4 +198,10 @@ function renderChart(player, history) {
 
 function escHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Stored timestamps are UTC ("YYYY-MM-DD HH:MM:SS"); parse as UTC, display local date + time
+function formatDateTime(ts) {
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }

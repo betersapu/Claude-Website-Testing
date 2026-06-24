@@ -99,7 +99,7 @@ function renderMatches(matches) {
             ? `<span class="match-score" style="font-size:0.85rem">${m.winner_score}–${m.loser_score}</span>`
             : '<span class="text-muted">—</span>';
           const delta = Math.round((m.winner_rating_after - m.winner_rating_before) * 10) / 10;
-          const date = new Date(m.played_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const date = formatDateTime(m.played_at);
           return `
             <tr>
               <td class="text-muted" style="white-space:nowrap">${date}</td>
@@ -225,6 +225,12 @@ function escHtml(str) {
 
 function escAttr(str) {
   return String(str).replace(/'/g, "\\'");
+}
+
+// Stored timestamps are UTC ("YYYY-MM-DD HH:MM:SS"); parse as UTC, display local date + time
+function formatDateTime(ts) {
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 load();
