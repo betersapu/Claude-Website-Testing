@@ -8,12 +8,13 @@ if (!playerId) {
 }
 
 async function loadProfile() {
-  const [playerRes, historyRes, matchesRes, partnersRes, activityRes] = await Promise.all([
+  const [playerRes, historyRes, matchesRes, partnersRes, activityRes, avatarRes] = await Promise.all([
     fetch(`/api/players/${playerId}`),
     fetch(`/api/players/${playerId}/history`),
     fetch(`/api/players/${playerId}/matches`),
     fetch(`/api/players/${playerId}/partners`),
     fetch(`/api/players/${playerId}/activity`),
+    fetch(`/api/players/${playerId}/avatar`),
   ]);
 
   if (!playerRes.ok) {
@@ -26,6 +27,8 @@ async function loadProfile() {
   const matches = await matchesRes.json();
   const partners = await partnersRes.json();
   const activity = await activityRes.json();
+  const avatarData = avatarRes.ok ? await avatarRes.json() : null;
+  const avatarUrl = avatarData?.url || null;
 
   document.title = `${player.name} – Pickleball ELO`;
 
@@ -33,7 +36,7 @@ async function loadProfile() {
   const rankings = await rankRes.json();
   const rank = rankings.findIndex(p => p.id === player.id) + 1;
 
-  renderProfile(player, rank, history, matches, partners, activity);
+  renderProfile(player, rank, history, matches, partners, activity, avatarUrl);
 }
 
 function computeBadges(player, rank, matches, history) {
@@ -80,9 +83,12 @@ function computeBadges(player, rank, matches, history) {
   return badges;
 }
 
-function renderProfile(player, rank, history, matches, partners, activity) {
+function renderProfile(player, rank, history, matches, partners, activity, avatarUrl) {
   const initials = player.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+  const avatarInner = avatarUrl
+    ? `<img src="${avatarUrl}" alt="${escHtml(player.name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`
+    : initials;
 
   const badges = computeBadges(player, rank, matches, history);
   const badgesHtml = badges.length
@@ -93,7 +99,7 @@ function renderProfile(player, rank, history, matches, partners, activity) {
 
   document.getElementById('profile-content').innerHTML = `
     <div class="profile-header">
-      <div class="avatar">${initials}</div>
+      <div class="avatar">${avatarInner}</div>
       <div>
         <h1>${escHtml(player.name)}</h1>
         <h2>Rank ${rankLabel}</h2>

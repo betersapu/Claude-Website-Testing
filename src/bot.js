@@ -125,11 +125,11 @@ client.on('interactionCreate', async interaction => {
     const name = interaction.options.getString('player');
 
     db.get(
-      `SELECT id, name, rating, peak_rating, wins, losses,
+      `SELECT id, name, rating, peak_rating, wins, losses, discord_id,
               CASE WHEN (wins+losses)>0 THEN ROUND(wins*100.0/(wins+losses),1) ELSE 0 END as win_rate
        FROM players WHERE name LIKE ?`,
       [`%${name}%`],
-      (err, player) => {
+      async (err, player) => {
         if (err || !player) return interaction.editReply(`No player found matching "${name}".`);
 
         fetchGames(
@@ -228,6 +228,15 @@ client.on('interactionCreate', async interaction => {
 
                 const peak = player.peak_rating ? Math.round(player.peak_rating) : Math.round(player.rating);
 
+                // Fetch Discord avatar if we have a discord_id
+                let avatarUrl = null;
+                if (player.discord_id) {
+                  try {
+                    const discordUser = await client.users.fetch(player.discord_id);
+                    avatarUrl = discordUser.displayAvatarURL({ size: 128 });
+                  } catch (e) { /* no avatar, skip */ }
+                }
+
                 const embed = new EmbedBuilder()
                   .setTitle(`🏓 ${player.name}`)
                   .setColor(0x6c63ff)
@@ -242,6 +251,8 @@ client.on('interactionCreate', async interaction => {
                   )
                   .setImage(chartUrl)
                   .setTimestamp();
+
+                if (avatarUrl) embed.setThumbnail(avatarUrl);
 
                 interaction.editReply({ embeds: [embed] });
               }

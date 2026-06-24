@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const db = require('./db');
@@ -463,6 +464,25 @@ app.delete('/api/matches/:id', (req, res) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
     });
+  });
+});
+
+// Get a player's Discord avatar URL via the bot token
+app.get('/api/players/:id/avatar', (req, res) => {
+  db.get('SELECT discord_id FROM players WHERE id = ?', [req.params.id], async (err, player) => {
+    if (err || !player || !player.discord_id) return res.status(404).json({ error: 'No Discord ID' });
+    try {
+      const r = await fetch(`https://discord.com/api/v10/users/${player.discord_id}`, {
+        headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` }
+      });
+      const user = await r.json();
+      const url = user.avatar
+        ? `https://cdn.discordapp.com/avatars/${player.discord_id}/${user.avatar}.png?size=128`
+        : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(player.discord_id) % 6n)}.png`;
+      res.json({ url });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 });
 
