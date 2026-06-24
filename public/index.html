@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Friend Elo Rankings</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Friend Elo Rankings</h1>
+    <p>Track player ratings, wins/losses, and head-to-head records.</p>
+  </header>
+
+  <section class="panel">
+    <h2>Add a New Player</h2>
+    <form id="add-player-form">
+      <div class="form-row">
+        <label for="player-name">Player Name</label>
+        <input id="player-name" name="playerName" type="text" placeholder="Enter new player name" />
+      </div>
+      <button type="submit">Add Player</button>
+    </form>
+    <p id="add-message" class="message"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Submit a Team Match</h2>
+    <form id="match-form">
+      <div class="form-row team-row">
+        <fieldset>
+          <legend>Winning Team</legend>
+          <label for="winner1">Player 1</label>
+          <select id="winner1" name="winner1"></select>
+          <label for="winner2">Player 2</label>
+          <select id="winner2" name="winner2"></select>
+        </fieldset>
+        <fieldset>
+          <legend>Losing Team</legend>
+          <label for="loser1">Player 1</label>
+          <select id="loser1" name="loser1"></select>
+          <label for="loser2">Player 2</label>
+          <select id="loser2" name="loser2"></select>
+        </fieldset>
+      </div>
+      <button type="submit">Submit Result</button>
+    </form>
+    <p id="form-message" class="message"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Current Rankings</h2>
+    <table id="rankings-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Name</th>
+          <th>Rating</th>
+          <th>Wins</th>
+          <th>Losses</th>
+          <th>Win Rate</th>
+          <th>Profile</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script src="main.js"></script>
+</body>
+</html>

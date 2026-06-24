@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Player Profile</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Player Profile</h1>
+    <a class="back-link" href="index.html">← Back to Rankings</a>
+  </header>
+
+  <section class="panel" id="profile-card">
+    <h2 id="player-name"></h2>
+    <div class="profile-stats">
+      <div><strong>Rank:</strong> <span id="player-rank"></span></div>
+      <div><strong>Rating:</strong> <span id="player-rating"></span></div>
+      <div><strong>Wins:</strong> <span id="player-wins"></span></div>
+      <div><strong>Losses:</strong> <span id="player-losses"></span></div>
+      <div><strong>Win Rate:</strong> <span id="player-winrate"></span>%</div>
+      <div><strong>Total Games:</strong> <span id="player-games"></span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Rating History (30 Days)</h2>
+    <canvas id="history-chart" width="800" height="320"></canvas>
+  </section>
+
+  <section class="panel">
+    <h2>Head-to-Head Records</h2>
+    <table id="head-to-head-table">
+      <thead>
+        <tr>
+          <th>Opponent ID</th>
+          <th>Wins</th>
+          <th>Losses</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script src="profile.js"></script>
+</body>
+</html>

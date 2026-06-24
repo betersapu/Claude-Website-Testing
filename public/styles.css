@@ -1,0 +1,82 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #f4f7fb;
+  color: #1d2330;
+}
+header {
+  padding: 24px;
+  background: #2c3e50;
+  color: #fff;
+  text-align: center;
+}
+header h1 {
+  margin: 0 0 8px;
+}
+.panel {
+  max-width: 980px;
+  margin: 24px auto;
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
+form {
+  display: grid;
+  gap: 16px;
+}
+.form-row {
+  display: grid;
+  gap: 8px;
+}
+label {
+  font-weight: 600;
+}
+select, button {
+  padding: 12px 14px;
+  font-size: 1rem;
+  border: 1px solid #d1dbe8;
+  border-radius: 8px;
+}
+button {
+  cursor: pointer;
+  background: #2c3e50;
+  color: #fff;
+  border: none;
+}
+button:hover {
+  background: #1b2835;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid #e8eef4;
+}
+th {
+  background: #f5f8fb;
+  font-weight: 700;
+}
+.message {
+  color: #2c3e50;
+  margin-top: 8px;
+}
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.back-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #2c3e50;
+  text-decoration: none;
+}
+.back-link:hover {
+  text-decoration: underline;
+}
