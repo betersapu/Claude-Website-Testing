@@ -1,3 +1,73 @@
+// ---- Auth / password gate ----
+let adminPassword = sessionStorage.getItem('adminPassword') || null;
+
+async function verifyPassword(pw) {
+  const res = await fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': pw },
+  });
+  return res.ok;
+}
+
+function showPanel() {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('panel').style.display = 'block';
+  load();
+}
+
+function showGate() {
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('gate').style.display = 'block';
+  document.getElementById('gate-password').value = '';
+}
+
+// Auto-unlock if a valid password is already stored this session
+(async function init() {
+  if (adminPassword && await verifyPassword(adminPassword)) {
+    showPanel();
+  } else {
+    adminPassword = null;
+    sessionStorage.removeItem('adminPassword');
+    showGate();
+  }
+})();
+
+document.getElementById('gate-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pw = document.getElementById('gate-password').value;
+  const errEl = document.getElementById('gate-error');
+  errEl.textContent = '';
+
+  if (await verifyPassword(pw)) {
+    adminPassword = pw;
+    sessionStorage.setItem('adminPassword', pw);
+    showPanel();
+  } else {
+    errEl.textContent = 'Incorrect password.';
+    document.getElementById('gate-password').value = '';
+  }
+});
+
+document.getElementById('lock-btn').addEventListener('click', () => {
+  adminPassword = null;
+  sessionStorage.removeItem('adminPassword');
+  showGate();
+});
+
+// Wrapper that attaches the admin password to every mutating request
+async function adminFetch(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), 'x-admin-password': adminPassword || '' },
+  });
+  if (res.status === 401) {
+    showToast('Session expired — please unlock again', 'error');
+    showGate();
+  }
+  return res;
+}
+
+// ---- Data loading ----
 async function load() {
   const [playersRes, matchesRes] = await Promise.all([
     fetch('/api/rankings'),
@@ -7,8 +77,68 @@ async function load() {
   const matches = await matchesRes.json();
   renderPlayers(players);
   renderMatches(matches);
+  populateSelects(players);
 }
 
+// ---- Submit match ----
+function populateSelects(players) {
+  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
+  const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
+  const opts = players.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+  ids.forEach(id => {
+    document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
+    if (saved[id]) document.getElementById(id).value = saved[id];
+  });
+}
+
+document.getElementById('match-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const w1 = +document.getElementById('winner1').value;
+  const w2 = +document.getElementById('winner2').value;
+  const l1 = +document.getElementById('loser1').value;
+  const l2 = +document.getElementById('loser2').value;
+
+  if (!w1 || !w2 || !l1 || !l2) return showToast('Select all four players', 'error');
+  if (new Set([w1, w2, l1, l2]).size !== 4) return showToast('All four players must be different', 'error');
+
+  const ws = document.getElementById('winner-score').value;
+  const ls = document.getElementById('loser-score').value;
+
+  const res = await adminFetch('/api/matches', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ winner_ids: [w1, w2], loser_ids: [l1, l2], winner_score: ws, loser_score: ls }),
+  });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+
+  const wNames = data.winners.map(p => p.name).join(' & ');
+  const lNames = data.losers.map(p => p.name).join(' & ');
+  showToast(`${wNames} beat ${lNames}`, 'success');
+  document.getElementById('match-form').reset();
+  load();
+});
+
+// ---- Add player ----
+document.getElementById('add-player-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('player-name').value.trim();
+  if (!name) return;
+
+  const res = await adminFetch('/api/players', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+
+  showToast(`${name} added!`, 'success');
+  document.getElementById('player-name').value = '';
+  load();
+});
+
+// ---- Players table ----
 function renderPlayers(players) {
   const el = document.getElementById('players-table');
   if (!players.length) {
@@ -18,15 +148,7 @@ function renderPlayers(players) {
   el.innerHTML = `
     <table class="rankings-table">
       <thead>
-        <tr>
-          <th>Name</th>
-          <th>Rating</th>
-          <th>Wins</th>
-          <th>Losses</th>
-          <th>Win Rate</th>
-          <th>Games</th>
-          <th></th>
-        </tr>
+        <tr><th>Name</th><th>Rating</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>Games</th><th></th></tr>
       </thead>
       <tbody>
         ${players.map(p => `
@@ -48,6 +170,7 @@ function renderPlayers(players) {
   `;
 }
 
+// ---- Match history table ----
 function renderMatches(matches) {
   const el = document.getElementById('matches-table');
   if (!matches.length) {
@@ -55,24 +178,18 @@ function renderMatches(matches) {
     return;
   }
 
-  // Group paired rows (same played_at, partner match) into doubles games
-  // Matches are stored as two rows per doubles game; group by timestamp
   const grouped = [];
   const seen = new Set();
   for (const m of matches) {
     if (seen.has(m.id)) continue;
-    // Find the partner row: same timestamp, different players, winner of one is not in the other
     const partner = matches.find(n =>
-      n.id !== m.id &&
-      !seen.has(n.id) &&
+      n.id !== m.id && !seen.has(n.id) &&
       n.played_at === m.played_at &&
-      n.winner_id !== m.winner_id &&
-      n.loser_id !== m.loser_id
+      n.winner_id !== m.winner_id && n.loser_id !== m.loser_id
     );
     if (partner) {
       grouped.push({ ids: [m.id, partner.id], m, partner });
-      seen.add(m.id);
-      seen.add(partner.id);
+      seen.add(m.id); seen.add(partner.id);
     } else {
       grouped.push({ ids: [m.id], m, partner: null });
       seen.add(m.id);
@@ -82,14 +199,7 @@ function renderMatches(matches) {
   el.innerHTML = `
     <table class="rankings-table">
       <thead>
-        <tr>
-          <th>Date</th>
-          <th>Winners</th>
-          <th>Score</th>
-          <th>Losers</th>
-          <th>Rating Δ</th>
-          <th></th>
-        </tr>
+        <tr><th>Date</th><th>Winners</th><th>Score</th><th>Losers</th><th>Rating Δ</th><th></th></tr>
       </thead>
       <tbody>
         ${grouped.map(({ ids, m, partner }) => {
@@ -103,24 +213,16 @@ function renderMatches(matches) {
           return `
             <tr>
               <td class="text-muted" style="white-space:nowrap">${date}</td>
-              <td>
-                <a href="/profile.html?id=${m.winner_id}" class="player-link">${escHtml(m.winner_name)}</a>
-                ${w2}
-              </td>
+              <td><a href="/profile.html?id=${m.winner_id}" class="player-link">${escHtml(m.winner_name)}</a> ${w2}</td>
               <td>${scoreStr}</td>
-              <td>
-                <a href="/profile.html?id=${m.loser_id}" class="player-link">${escHtml(m.loser_name)}</a>
-                ${l2}
-              </td>
+              <td><a href="/profile.html?id=${m.loser_id}" class="player-link">${escHtml(m.loser_name)}</a> ${l2}</td>
               <td>
                 <span class="delta-pair">
                   <span class="rating-change up">+${delta}</span>
                   <span class="rating-change down">−${Math.abs(Math.round((m.loser_rating_after - m.loser_rating_before) * 10) / 10)}</span>
                 </span>
               </td>
-              <td>
-                <button class="btn-delete" onclick="confirmDelete('match',${JSON.stringify(ids)},'this match')">✕</button>
-              </td>
+              <td><button class="btn-delete" onclick="confirmDelete('match',${JSON.stringify(ids)},'this match')">✕</button></td>
             </tr>
           `;
         }).join('')}
@@ -129,7 +231,7 @@ function renderMatches(matches) {
   `;
 }
 
-// Edit player modal
+// ---- Edit player modal ----
 function openEdit(id, name, rating, wins, losses) {
   document.getElementById('edit-id').value = id;
   document.getElementById('edit-name').value = name;
@@ -148,7 +250,7 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
     wins: +document.getElementById('edit-wins').value,
     losses: +document.getElementById('edit-losses').value,
   };
-  const res = await fetch(`/api/players/${id}`, {
+  const res = await adminFetch(`/api/players/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -164,7 +266,7 @@ document.getElementById('edit-cancel').addEventListener('click', () => {
   document.getElementById('edit-modal').classList.remove('show');
 });
 
-// Delete confirm modal
+// ---- Delete confirm modal ----
 let pendingDelete = null;
 
 function confirmDelete(type, id, label) {
@@ -183,15 +285,14 @@ document.getElementById('modal-confirm').addEventListener('click', async () => {
   pendingDelete = null;
 
   if (type === 'player') {
-    const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
+    const res = await adminFetch(`/api/players/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) return showToast(data.error, 'error');
     showToast('Player deleted', 'success');
   } else {
-    // id is an array of match row ids
     const ids = Array.isArray(id) ? id : [id];
     for (const mid of ids) {
-      await fetch(`/api/matches/${mid}`, { method: 'DELETE' });
+      await adminFetch(`/api/matches/${mid}`, { method: 'DELETE' });
     }
     showToast('Match deleted', 'success');
   }
@@ -212,6 +313,7 @@ document.getElementById('modal-cancel').addEventListener('click', () => {
   });
 });
 
+// ---- Helpers ----
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -227,10 +329,7 @@ function escAttr(str) {
   return String(str).replace(/'/g, "\\'");
 }
 
-// Stored timestamps are UTC ("YYYY-MM-DD HH:MM:SS"); parse as UTC, display local date + time
 function formatDateTime(ts) {
   const d = new Date(ts.replace(' ', 'T') + 'Z');
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
-
-load();

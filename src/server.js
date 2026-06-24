@@ -9,6 +9,24 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Shared admin password protecting all data-changing endpoints.
+// Override on the host by setting the ADMIN_PASSWORD environment variable.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'hamster';
+
+// Require the password on any mutating /api request (POST/PUT/DELETE/PATCH).
+// Read-only GET endpoints stay public so the main leaderboard works for everyone.
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    if (req.get('x-admin-password') !== ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Incorrect or missing admin password' });
+    }
+  }
+  next();
+});
+
+// Lets the admin page verify the password before revealing the edit UI.
+app.post('/api/auth', (req, res) => res.json({ ok: true }));
+
 // Glicko-2 settings
 const G2_DEFAULTS = { tau: 0.5, rating: 1500, rd: 350, vol: 0.06 };
 

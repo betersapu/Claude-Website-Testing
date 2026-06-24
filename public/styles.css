@@ -342,6 +342,36 @@ select option { background: var(--surface2); }
 .page-header { margin-bottom: 2rem; }
 .page-header p { color: var(--text-muted); margin-top: 0.3rem; font-size: 0.95rem; }
 
+/* Password gate */
+.lock-card {
+  max-width: 380px;
+  margin: 3rem auto 0;
+}
+.lock-icon {
+  font-size: 2rem;
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+.gate-error {
+  color: var(--loss);
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 0.75rem;
+  min-height: 1rem;
+}
+input[type="password"] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input[type="password"]:focus { border-color: var(--accent); }
+
 /* Score inputs */
 .score-row {
   display: flex;

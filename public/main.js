@@ -1,16 +1,16 @@
-let players = [];
-
-async function fetchRankings() {
-  const res = await fetch('/api/rankings');
-  players = await res.json();
-  renderRankings(players);
-  populateSelects(players);
+async function fetchData() {
+  const [rankingsRes, matchesRes] = await Promise.all([
+    fetch('/api/rankings'),
+    fetch('/api/matches'),
+  ]);
+  renderRankings(await rankingsRes.json());
+  renderRecent(await matchesRes.json());
 }
 
 function renderRankings(players) {
   const container = document.getElementById('rankings-container');
   if (!players.length) {
-    container.innerHTML = '<p class="empty-state">No players yet. Add some players to get started!</p>';
+    container.innerHTML = '<p class="empty-state">No players yet.</p>';
     return;
   }
 
@@ -25,9 +25,6 @@ function renderRankings(players) {
         <td class="win-rate">${p.win_rate}%</td>
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>
         <td>${p.wins + p.losses}</td>
-        <td>
-          <button class="btn-delete" onclick="confirmDelete(${p.id}, '${escHtml(p.name)}')" title="Delete player">✕</button>
-        </td>
       </tr>
     `;
   }).join('');
@@ -42,7 +39,6 @@ function renderRankings(players) {
           <th>Win Rate</th>
           <th>Record</th>
           <th>Games</th>
-          <th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -50,108 +46,68 @@ function renderRankings(players) {
   `;
 }
 
-function populateSelects(players) {
-  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
-  const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
-  const opts = players.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
-  ids.forEach(id => {
-    document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
-    if (saved[id]) document.getElementById(id).value = saved[id];
-  });
-}
-
-document.getElementById('match-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const w1 = +document.getElementById('winner1').value;
-  const w2 = +document.getElementById('winner2').value;
-  const l1 = +document.getElementById('loser1').value;
-  const l2 = +document.getElementById('loser2').value;
-
-  if (!w1 || !w2 || !l1 || !l2) return showToast('Select all four players', 'error');
-  const all = [w1, w2, l1, l2];
-  if (new Set(all).size !== 4) return showToast('All four players must be different', 'error');
-
-  const ws = document.getElementById('winner-score').value;
-  const ls = document.getElementById('loser-score').value;
-
-  const res = await fetch('/api/matches', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ winner_ids: [w1, w2], loser_ids: [l1, l2], winner_score: ws, loser_score: ls }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-
-  const wNames = data.winners.map(p => p.name).join(' & ');
-  const lNames = data.losers.map(p => p.name).join(' & ');
-  showToast(`${wNames} beat ${lNames}`, 'success');
-  document.getElementById('match-form').reset();
-  fetchRankings();
-});
-
-document.getElementById('add-player-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = document.getElementById('player-name').value.trim();
-  if (!name) return;
-
-  const res = await fetch('/api/players', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-
-  showToast(`${name} added!`, 'success');
-  document.getElementById('player-name').value = '';
-  fetchRankings();
-});
-
-// Delete player with confirmation modal
-let pendingDeleteId = null;
-
-function confirmDelete(id, name) {
-  pendingDeleteId = id;
-  document.getElementById('modal-msg').textContent = `Delete ${name}? This will also remove all their match history.`;
-  document.getElementById('confirm-modal').classList.add('show');
-}
-
-document.getElementById('modal-confirm').addEventListener('click', async () => {
-  if (!pendingDeleteId) return;
-  document.getElementById('confirm-modal').classList.remove('show');
-
-  const res = await fetch(`/api/players/${pendingDeleteId}`, { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-
-  showToast('Player deleted', 'success');
-  pendingDeleteId = null;
-  fetchRankings();
-});
-
-document.getElementById('modal-cancel').addEventListener('click', () => {
-  pendingDeleteId = null;
-  document.getElementById('confirm-modal').classList.remove('show');
-});
-
-document.getElementById('confirm-modal').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('confirm-modal')) {
-    pendingDeleteId = null;
-    document.getElementById('confirm-modal').classList.remove('show');
+// Group the two stored rows per doubles game into single games, then show the most recent.
+function renderRecent(matches) {
+  const el = document.getElementById('recent-container');
+  if (!matches.length) {
+    el.innerHTML = '<p class="empty-state">No games played yet.</p>';
+    return;
   }
-});
 
-function showToast(msg, type = 'success') {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = `toast ${type} show`;
-  setTimeout(() => { t.className = 'toast'; }, 3500);
+  const grouped = [];
+  const seen = new Set();
+  for (const m of matches) {
+    if (seen.has(m.id)) continue;
+    const partner = matches.find(n =>
+      n.id !== m.id && !seen.has(n.id) &&
+      n.played_at === m.played_at &&
+      n.winner_id !== m.winner_id && n.loser_id !== m.loser_id
+    );
+    if (partner) {
+      grouped.push({ m, partner });
+      seen.add(m.id); seen.add(partner.id);
+    } else {
+      grouped.push({ m, partner: null });
+      seen.add(m.id);
+    }
+  }
+
+  const recent = grouped.slice(0, 10);
+
+  el.innerHTML = `
+    <table class="rankings-table">
+      <thead>
+        <tr><th>Date</th><th>Winners</th><th>Score</th><th>Losers</th></tr>
+      </thead>
+      <tbody>
+        ${recent.map(({ m, partner }) => {
+          const w2 = partner ? `& <a href="/profile.html?id=${partner.winner_id}" class="player-link">${escHtml(partner.winner_name)}</a>` : '';
+          const l2 = partner ? `& <a href="/profile.html?id=${partner.loser_id}" class="player-link">${escHtml(partner.loser_name)}</a>` : '';
+          const scoreStr = (m.winner_score != null && m.loser_score != null)
+            ? `<span class="match-score" style="font-size:0.85rem">${m.winner_score}–${m.loser_score}</span>`
+            : '<span class="text-muted">—</span>';
+          const date = formatDateTime(m.played_at);
+          return `
+            <tr>
+              <td class="text-muted" style="white-space:nowrap">${date}</td>
+              <td><a href="/profile.html?id=${m.winner_id}" class="player-link">${escHtml(m.winner_name)}</a> ${w2}</td>
+              <td>${scoreStr}</td>
+              <td><a href="/profile.html?id=${m.loser_id}" class="player-link">${escHtml(m.loser_name)}</a> ${l2}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 function escHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-fetchRankings();
+function formatDateTime(ts) {
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+fetchData();

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin – Pickleball ELO</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">🏓 Pickleball ELO</a>
+    <a href="/">Rankings</a>
+    <a href="/admin.html" class="active">Admin</a>
+  </nav>
+
+  <!-- Password gate -->
+  <div class="container" id="gate">
+    <div class="card lock-card">
+      <div class="lock-icon">🔒</div>
+      <h3 style="text-align:center">Admin Access</h3>
+      <p class="text-muted" style="text-align:center;margin-bottom:1.25rem;font-size:0.9rem">
+        Enter the password to manage players and matches.
+      </p>
+      <form id="gate-form">
+        <div class="form-group">
+          <input type="password" id="gate-password" placeholder="Password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Unlock</button>
+      </form>
+      <p id="gate-error" class="gate-error"></p>
+    </div>
+  </div>
+
+  <!-- Admin panel (hidden until unlocked) -->
+  <div class="container" id="panel" style="display:none">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem">
+      <div>
+        <h1>Admin</h1>
+        <p>Submit results, manage players, and edit data</p>
+      </div>
+      <button class="btn btn-secondary" id="lock-btn" style="width:auto">Lock</button>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:1.5rem;">
+      <!-- Submit match -->
+      <div class="card">
+        <h3>Submit Match Result</h3>
+        <form id="match-form">
+          <div class="team-section">
+            <div class="team-label win">Winning Team</div>
+            <div class="form-group">
+              <label>Player 1</label>
+              <select id="winner1" required><option value="">Select player…</option></select>
+            </div>
+            <div class="form-group">
+              <label>Player 2</label>
+              <select id="winner2" required><option value="">Select player…</option></select>
+            </div>
+          </div>
+          <div class="team-vs">VS</div>
+          <div class="team-section">
+            <div class="team-label loss">Losing Team</div>
+            <div class="form-group">
+              <label>Player 1</label>
+              <select id="loser1" required><option value="">Select player…</option></select>
+            </div>
+            <div class="form-group">
+              <label>Player 2</label>
+              <select id="loser2" required><option value="">Select player…</option></select>
+            </div>
+          </div>
+          <div class="score-row">
+            <div class="form-group" style="flex:1">
+              <label>Winner Score</label>
+              <input type="number" id="winner-score" min="0" max="99" placeholder="e.g. 11" />
+            </div>
+            <div class="score-dash-wrapper">
+              <div class="score-label-spacer"></div>
+              <div class="score-dash">–</div>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>Loser Score</label>
+              <input type="number" id="loser-score" min="0" max="99" placeholder="e.g. 7" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Submit Match</button>
+        </form>
+      </div>
+
+      <!-- Add player -->
+      <div class="card">
+        <h3>Add Player</h3>
+        <form id="add-player-form">
+          <div class="form-group">
+            <label>Player Name</label>
+            <input type="text" id="player-name" placeholder="Enter name…" required />
+          </div>
+          <button type="submit" class="btn btn-secondary">Add Player</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Players management -->
+    <div class="card" style="margin-bottom:1.5rem">
+      <h3>Players</h3>
+      <div id="players-table"><p class="loading">Loading…</p></div>
+    </div>
+
+    <!-- Match history -->
+    <div class="card">
+      <h3>Match History</h3>
+      <div id="matches-table"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Edit player modal -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal" style="max-width:420px">
+      <h3 style="margin-bottom:1.25rem;font-size:1rem">Edit Player</h3>
+      <form id="edit-form">
+        <input type="hidden" id="edit-id" />
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="edit-name" required />
+        </div>
+        <div class="form-group">
+          <label>Rating</label>
+          <input type="number" id="edit-rating" step="0.1" required />
+        </div>
+        <div class="grid-2" style="gap:0.75rem">
+          <div class="form-group">
+            <label>Wins</label>
+            <input type="number" id="edit-wins" min="0" required />
+          </div>
+          <div class="form-group">
+            <label>Losses</label>
+            <input type="number" id="edit-losses" min="0" required />
+          </div>
+        </div>
+        <div style="display:flex;gap:0.75rem;margin-top:0.5rem">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" id="edit-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm delete modal -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal">
+      <p id="modal-msg"></p>
+      <div style="display:flex;gap:0.75rem;margin-top:1.25rem">
+        <button class="btn btn-danger" id="modal-confirm">Delete</button>
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="admin.js"></script>
+</body>
+</html>
