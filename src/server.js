@@ -13,11 +13,11 @@ function expectedScore(ratingA, ratingB) {
   return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
 }
 
-// Scale K by score margin: no score = K as-is, larger margin = higher K (capped at 2×)
+// Scale K by score margin: ELO difference does the heavy lifting, margin adds a smaller boost
 function adjustedK(winnerScore, loserScore) {
   if (winnerScore == null || loserScore == null) return K;
   const margin = Math.max(1, winnerScore - loserScore);
-  return K * Math.min(2, Math.log(1 + margin) / Math.log(1 + 1));
+  return K * (1 + 0.5 * Math.log(1 + margin) / Math.log(2));
 }
 
 // Get all players ranked by rating
