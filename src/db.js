@@ -45,6 +45,25 @@ db.serialize(() => {
   db.run(`ALTER TABLE matches ADD COLUMN loser_score INTEGER`, () => {});
   db.run(`ALTER TABLE players ADD COLUMN rd REAL DEFAULT 350`, () => {});
   db.run(`ALTER TABLE players ADD COLUMN vol REAL DEFAULT 0.06`, () => {});
+  db.run(`ALTER TABLE players ADD COLUMN peak_rating REAL`, () => {});
+
+  // Always recalculate peak_rating at startup to fix any bad data
+  db.all(`SELECT id, rating FROM players`, (err, players) => {
+    if (err || !players) return;
+    players.forEach(p => {
+      db.all(
+        `SELECT MAX(winner_rating_after) AS best FROM matches WHERE winner_id = ?
+         UNION ALL
+         SELECT MAX(loser_rating_after)  AS best FROM matches WHERE loser_id  = ?`,
+        [p.id, p.id],
+        (err, rows) => {
+          if (err) return;
+          const peak = Math.max(p.rating, ...rows.map(r => r.best || 0));
+          db.run(`UPDATE players SET peak_rating = ? WHERE id = ?`, [peak, p.id]);
+        }
+      );
+    });
+  });
 
   // Seed an empty volume DB (e.g. fresh Railway deploy) from the bundled elo.db.
   // Only runs when using a separate DB path AND the players table is empty, so it

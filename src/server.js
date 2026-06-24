@@ -74,15 +74,43 @@ function calcGlicko(winners, losers, winnerScore, loserScore) {
   };
 }
 
+// Calculate current win/loss streak for a player from match history
+function calcStreak(playerId, callback) {
+  db.all(
+    `SELECT CASE WHEN winner_id = ? THEN 'W' ELSE 'L' END as result
+     FROM matches WHERE winner_id = ? OR loser_id = ?
+     ORDER BY played_at DESC, id DESC`,
+    [playerId, playerId, playerId],
+    (err, rows) => {
+      if (err || !rows.length) return callback(0);
+      const first = rows[0].result;
+      let streak = 0;
+      for (const r of rows) {
+        if (r.result !== first) break;
+        streak++;
+      }
+      callback(first === 'W' ? streak : -streak);
+    }
+  );
+}
+
 // Get all players ranked by rating
 app.get('/api/rankings', (req, res) => {
   db.all(
-    `SELECT id, name, rating, wins, losses,
+    `SELECT id, name, rating, peak_rating, wins, losses,
             CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate
      FROM players ORDER BY rating DESC`,
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+      // Attach streak to each player
+      let remaining = rows.length;
+      if (!remaining) return res.json(rows);
+      rows.forEach(p => {
+        calcStreak(p.id, streak => {
+          p.streak = streak;
+          if (--remaining === 0) res.json(rows);
+        });
+      });
     }
   );
 });
@@ -151,10 +179,10 @@ app.post('/api/matches', (req, res) => {
           (err) => {
             if (err) return res.status(500).json({ error: err.message });
 
-            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1   WHERE id=?`, [newRatings.w1.rating, newRatings.w1.rd, newRatings.w1.vol, winners[0].id]);
-            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1   WHERE id=?`, [newRatings.w2.rating, newRatings.w2.rd, newRatings.w2.vol, winners[1].id]);
-            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1 WHERE id=?`, [newRatings.l1.rating, newRatings.l1.rd, newRatings.l1.vol, losers[0].id]);
-            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1 WHERE id=?`, [newRatings.l2.rating, newRatings.l2.rd, newRatings.l2.vol, losers[1].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1,   peak_rating=MAX(COALESCE(peak_rating,0),?) WHERE id=?`, [newRatings.w1.rating, newRatings.w1.rd, newRatings.w1.vol, newRatings.w1.rating, winners[0].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, wins=wins+1,   peak_rating=MAX(COALESCE(peak_rating,0),?) WHERE id=?`, [newRatings.w2.rating, newRatings.w2.rd, newRatings.w2.vol, newRatings.w2.rating, winners[1].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1,peak_rating=MAX(COALESCE(peak_rating,0),?) WHERE id=?`, [newRatings.l1.rating, newRatings.l1.rd, newRatings.l1.vol, newRatings.l1.rating, losers[0].id]);
+            db.run(`UPDATE players SET rating=?, rd=?, vol=?, losses=losses+1,peak_rating=MAX(COALESCE(peak_rating,0),?) WHERE id=?`, [newRatings.l2.rating, newRatings.l2.rd, newRatings.l2.vol, newRatings.l2.rating, losers[1].id]);
 
             res.json({
               winners: [
@@ -177,13 +205,16 @@ app.post('/api/matches', (req, res) => {
 app.get('/api/players/:id', (req, res) => {
   const { id } = req.params;
   db.get(
-    `SELECT id, name, rating, wins, losses,
+    `SELECT id, name, rating, peak_rating, wins, losses,
             CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate
      FROM players WHERE id = ?`,
     [id],
     (err, player) => {
       if (err || !player) return res.status(404).json({ error: 'Player not found' });
-      res.json(player);
+      calcStreak(player.id, streak => {
+        player.streak = streak;
+        res.json(player);
+      });
     }
   );
 });

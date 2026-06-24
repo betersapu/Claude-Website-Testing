@@ -170,8 +170,8 @@ select option { background: var(--surface2); }
   border-bottom: 1px solid var(--border);
 }
 
-.rankings-table tr:last-child td { border-bottom: none; }
-.rankings-table tr:hover td { background: var(--surface2); }
+.rankings-table tbody:has(.tags-row):hover tr td { background: var(--surface2); }
+.rankings-table tbody:not(:has(.tags-row)) tr:hover td { background: var(--surface2); }
 
 .rank-num {
   font-weight: 700;
@@ -204,6 +204,66 @@ select option { background: var(--surface2); }
 .win-rate { color: var(--win); font-weight: 600; }
 .text-muted { color: var(--text-muted); }
 
+.streak-win  { color: var(--win);  font-weight: 700; font-size: 0.85rem; }
+.streak-loss { color: var(--loss); font-weight: 700; font-size: 0.85rem; }
+
+.prob-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Game tags row */
+.tags-row td { padding: 0 0.8rem 0.6rem; border-bottom: 1px solid var(--border); }
+tbody:last-child .tags-row td { border-bottom: none; }
+tr:has(+ .tags-row) td { border-bottom: none; }
+
+.tags-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tags-row td {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.game-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.tag-prob    { background: rgba(123,130,168,0.12);  border-color: rgba(123,130,168,0.3); color: var(--text-muted); }
+.tag-upset   { background: rgba(255,152,0,0.15);   border-color: rgba(255,152,0,0.4);   color: #ff9800; }
+.tag-favored { background: rgba(108,99,255,0.15);  border-color: rgba(108,99,255,0.4);  color: var(--accent); }
+.tag-close   { background: rgba(33,150,243,0.15);  border-color: rgba(33,150,243,0.4);  color: #42a5f5; }
+.tag-stomp   { background: rgba(255,83,112,0.15);  border-color: rgba(255,83,112,0.4);  color: var(--loss); }
+.tag-shutout { background: rgba(255,215,0,0.15);   border-color: rgba(255,215,0,0.4);   color: var(--gold); }
+
+.prob-bar-wrap {
+  margin: 1rem 0 0.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  height: 28px;
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.prob-bar-win  { background: var(--win);  transition: width 0.4s ease; display:flex; align-items:center; justify-content:center; }
+.prob-bar-loss { background: var(--loss); transition: width 0.4s ease; flex:1;       display:flex; align-items:center; justify-content:center; }
+.prob-bar-label { font-size: 0.8rem; font-weight: 700; color: #fff; padding: 0 0.5rem; white-space: nowrap; overflow: hidden; }
+#prob-row { margin-top: 0.75rem; display: none; }
+
 /* Profile page */
 .profile-header {
   display: flex;
@@ -227,12 +287,13 @@ select option { background: var(--surface2); }
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
-@media (max-width: 600px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 450px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 
 .stat-card {
   background: var(--surface);

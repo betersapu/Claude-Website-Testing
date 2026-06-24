@@ -80,15 +80,55 @@ async function load() {
   populateSelects(players);
 }
 
+// ---- Win probability ----
+let _playersCache = [];
+
+// Glicko-2 expected score: E = 1 / (1 + exp(-g(RD) * (r1 - r2) / 400))
+function glickoExpected(r1, rd1, r2, rd2) {
+  const g = rd => 1 / Math.sqrt(1 + 3 * rd * rd / (Math.PI * Math.PI * 400 * 400));
+  return 1 / (1 + Math.exp(-g(Math.sqrt(rd1 * rd1 + rd2 * rd2)) * (r1 - r2) / 400));
+}
+
+function updateProbBar() {
+  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
+  const [w1id, w2id, l1id, l2id] = ids.map(id => +document.getElementById(id).value);
+  const row = document.getElementById('prob-row');
+
+  if (!w1id || !w2id || !l1id || !l2id) { row.style.display = 'none'; return; }
+  if (new Set([w1id, w2id, l1id, l2id]).size !== 4) { row.style.display = 'none'; return; }
+
+  const byId = Object.fromEntries(_playersCache.map(p => [p.id, p]));
+  const [w1, w2, l1, l2] = [w1id, w2id, l1id, l2id].map(id => byId[id]);
+  if (!w1 || !w2 || !l1 || !l2) { row.style.display = 'none'; return; }
+
+  // Average team ratings/RDs
+  const wRating = (w1.rating + w2.rating) / 2;
+  const wRd     = Math.sqrt((w1.rd * w1.rd + w2.rd * w2.rd) / 2);
+  const lRating = (l1.rating + l2.rating) / 2;
+  const lRd     = Math.sqrt((l1.rd * l1.rd + l2.rd * l2.rd) / 2);
+
+  const winProb = Math.round(glickoExpected(wRating, wRd, lRating, lRd) * 100);
+  const lossProb = 100 - winProb;
+
+  document.getElementById('prob-win').style.width  = `${winProb}%`;
+  document.getElementById('prob-loss').style.width = `${lossProb}%`;
+  document.getElementById('prob-win-label').textContent  = winProb  > 15 ? `${winProb}%`  : '';
+  document.getElementById('prob-loss-label').textContent = lossProb > 15 ? `${lossProb}%` : '';
+  row.style.display = 'block';
+}
+
 // ---- Submit match ----
 function populateSelects(players) {
+  _playersCache = players;
   const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
   const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
   const opts = players.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
   ids.forEach(id => {
     document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
     if (saved[id]) document.getElementById(id).value = saved[id];
+    document.getElementById(id).addEventListener('change', updateProbBar);
   });
+  updateProbBar();
 }
 
 document.getElementById('match-form').addEventListener('submit', async (e) => {

@@ -125,7 +125,7 @@ client.on('interactionCreate', async interaction => {
     const name = interaction.options.getString('player');
 
     db.get(
-      `SELECT id, name, rating, wins, losses,
+      `SELECT id, name, rating, peak_rating, wins, losses,
               CASE WHEN (wins+losses)>0 THEN ROUND(wins*100.0/(wins+losses),1) ELSE 0 END as win_rate
        FROM players WHERE name LIKE ?`,
       [`%${name}%`],
@@ -208,19 +208,44 @@ client.on('interactionCreate', async interaction => {
 
             const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&backgroundColor=%230f1117&width=500&height=200`;
 
-            const embed = new EmbedBuilder()
-              .setTitle(`🏓 ${player.name}`)
-              .setColor(0x6c63ff)
-              .addFields(
-                { name: 'Rating',         value: `**${Math.round(player.rating)}**`, inline: true },
-                { name: 'Record',         value: `${player.wins}W ${player.losses}L`, inline: true },
-                { name: 'Win Rate',       value: `${player.win_rate}%`, inline: true },
-                { name: 'Recent Matches', value: matchLines.length ? matchLines.join('\n') : 'No matches yet.' }
-              )
-              .setImage(chartUrl)
-              .setTimestamp();
+            // Calculate streak
+            db.all(
+              `SELECT CASE WHEN winner_id = ? THEN 'W' ELSE 'L' END as result
+               FROM matches WHERE winner_id = ? OR loser_id = ?
+               ORDER BY played_at DESC, id DESC`,
+              [player.id, player.id, player.id],
+              (err, streakRows) => {
+                let streakStr = '—';
+                if (!err && streakRows.length) {
+                  const first = streakRows[0].result;
+                  let count = 0;
+                  for (const r of streakRows) {
+                    if (r.result !== first) break;
+                    count++;
+                  }
+                  streakStr = first === 'W' ? `🔥 W${count}` : `❄️ L${count}`;
+                }
 
-            interaction.editReply({ embeds: [embed] });
+                const peak = player.peak_rating ? Math.round(player.peak_rating) : Math.round(player.rating);
+
+                const embed = new EmbedBuilder()
+                  .setTitle(`🏓 ${player.name}`)
+                  .setColor(0x6c63ff)
+                  .addFields(
+                    { name: 'Rating',      value: `**${Math.round(player.rating)}**`, inline: true },
+                    { name: 'Peak',        value: `**${peak}**`, inline: true },
+                    { name: 'Streak',      value: streakStr, inline: true },
+                    { name: 'Record',      value: `${player.wins}W ${player.losses}L`, inline: true },
+                    { name: 'Win Rate',    value: `${player.win_rate}%`, inline: true },
+                    { name: '​',      value: '​', inline: true },
+                    { name: 'Recent Matches', value: matchLines.length ? matchLines.join('\n') : 'No matches yet.' }
+                  )
+                  .setImage(chartUrl)
+                  .setTimestamp();
+
+                interaction.editReply({ embeds: [embed] });
+              }
+            );
           }
         );
       }

@@ -47,8 +47,12 @@ function renderProfile(player, rank, history, matches) {
 
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-value">${player.rating}</div>
+        <div class="stat-value">${Math.round(player.rating)}</div>
         <div class="stat-label">ELO Rating</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--gold)">${player.peak_rating ? Math.round(player.peak_rating) : Math.round(player.rating)}</div>
+        <div class="stat-label">Peak Rating</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" style="color:var(--win)">${player.win_rate}%</div>
@@ -61,6 +65,15 @@ function renderProfile(player, rank, history, matches) {
       <div class="stat-card">
         <div class="stat-value" style="color:var(--loss)">${player.losses}</div>
         <div class="stat-label">Losses</div>
+      </div>
+      <div class="stat-card">
+        ${(() => {
+          const s = player.streak || 0;
+          if (s === 0) return `<div class="stat-value text-muted">—</div><div class="stat-label">Streak</div>`;
+          const color = s > 0 ? 'var(--win)' : 'var(--loss)';
+          const label = s > 0 ? `W${s}` : `L${Math.abs(s)}`;
+          return `<div class="stat-value" style="color:${color}">${label}</div><div class="stat-label">Streak</div>`;
+        })()}
       </div>
     </div>
 

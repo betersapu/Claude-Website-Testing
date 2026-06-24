@@ -46,6 +46,28 @@ function renderRankings(players) {
   `;
 }
 
+// ELO expected win probability (uses pre-match ratings)
+function expectedWinProb(wRating, lRating) {
+  return 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
+}
+
+// Generate game tags based on score and probability
+function gameTags(m, partner, prob) {
+  const tags = [];
+  const ws = m.winner_score;
+  const ls = m.loser_score;
+  const hasScore = ws != null && ls != null;
+  const margin = hasScore ? ws - ls : null;
+
+  if (prob < 40)             tags.push({ label: '🔥 Upset',      cls: 'tag-upset'   });
+  if (prob >= 75)            tags.push({ label: '⭐ Favored',    cls: 'tag-favored' });
+  if (hasScore && margin <= 2) tags.push({ label: '⚔️ Close Game', cls: 'tag-close'   });
+  if (hasScore && margin >= 7) tags.push({ label: '💥 Stomp',     cls: 'tag-stomp'   });
+  if (hasScore && ls === 0)  tags.push({ label: '🏆 Shutout',    cls: 'tag-shutout' });
+
+  return tags;
+}
+
 // Group the two stored rows per doubles game into single games, then show the most recent.
 function renderRecent(matches) {
   const el = document.getElementById('recent-container');
@@ -79,24 +101,51 @@ function renderRecent(matches) {
       <thead>
         <tr><th>Date</th><th>Winners</th><th>Score</th><th>Losers</th></tr>
       </thead>
-      <tbody>
-        ${recent.map(({ m, partner }) => {
-          const w2 = partner ? `& <a href="/profile.html?id=${partner.winner_id}" class="player-link">${escHtml(partner.winner_name)}</a>` : '';
-          const l2 = partner ? `& <a href="/profile.html?id=${partner.loser_id}" class="player-link">${escHtml(partner.loser_name)}</a>` : '';
+      ${recent.map(({ m, partner }) => {
+          const w2 = partner ? ` & <a href="/profile.html?id=${partner.winner_id}" class="player-link">${escHtml(partner.winner_name)}</a>` : '';
+          const l2 = partner ? ` & <a href="/profile.html?id=${partner.loser_id}" class="player-link">${escHtml(partner.loser_name)}</a>` : '';
           const scoreStr = (m.winner_score != null && m.loser_score != null)
             ? `<span class="match-score" style="font-size:0.85rem">${m.winner_score}–${m.loser_score}</span>`
             : '<span class="text-muted">—</span>';
           const date = formatDateTime(m.played_at);
+
+          // Pre-match win probability
+          const wAvg = partner ? (m.winner_rating_before + partner.winner_rating_before) / 2 : m.winner_rating_before;
+          const lAvg = partner ? (m.loser_rating_before  + partner.loser_rating_before)  / 2 : m.loser_rating_before;
+          const prob = Math.round(expectedWinProb(wAvg, lAvg) * 100);
+
+          const tags = gameTags(m, partner, prob);
+          const probTag = `<span class="game-tag tag-prob">📊 Winners: ${prob}%</span>`;
+          const allTags = [probTag, ...tags.map(t => `<span class="game-tag ${t.cls}">${t.label}</span>`)];
+
+          // Rating deltas
+          function delta(after, before) {
+            const d = Math.round(after - before);
+            return `<span class="rating-change ${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</span>`;
+          }
+          const wDelta1 = delta(m.winner_rating_after, m.winner_rating_before);
+          const wDelta2 = partner ? delta(partner.winner_rating_after, partner.winner_rating_before) : '';
+          const lDelta1 = delta(m.loser_rating_after, m.loser_rating_before);
+          const lDelta2 = partner ? delta(partner.loser_rating_after, partner.loser_rating_before) : '';
+
+
           return `
-            <tr>
-              <td class="text-muted" style="white-space:nowrap">${date}</td>
-              <td><a href="/profile.html?id=${m.winner_id}" class="player-link">${escHtml(m.winner_name)}</a> ${w2}</td>
-              <td>${scoreStr}</td>
-              <td><a href="/profile.html?id=${m.loser_id}" class="player-link">${escHtml(m.loser_name)}</a> ${l2}</td>
-            </tr>
+            <tbody>
+              <tr>
+                <td class="text-muted" style="white-space:nowrap">${date}</td>
+                <td><a href="/profile.html?id=${m.winner_id}" class="player-link">${escHtml(m.winner_name)}</a>${w2}</td>
+                <td>${scoreStr}</td>
+                <td><a href="/profile.html?id=${m.loser_id}" class="player-link">${escHtml(m.loser_name)}</a>${l2}</td>
+              </tr>
+              <tr class="tags-row">
+                <td><div class="tags-wrap">${allTags.join('')}</div></td>
+                <td>${wDelta1}${wDelta2 ? ` · ${wDelta2}` : ''}</td>
+                <td style="text-align:center;vertical-align:middle;color:var(--text-muted);font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase">vs</td>
+                <td>${lDelta1}${lDelta2 ? ` · ${lDelta2}` : ''}</td>
+              </tr>
+            </tbody>
           `;
-        }).join('')}
-      </tbody>
+      }).join('')}
     </table>
   `;
 }
