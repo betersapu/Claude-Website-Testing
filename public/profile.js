@@ -8,11 +8,12 @@ if (!playerId) {
 }
 
 async function loadProfile() {
-  const [playerRes, historyRes, matchesRes, partnersRes] = await Promise.all([
+  const [playerRes, historyRes, matchesRes, partnersRes, activityRes] = await Promise.all([
     fetch(`/api/players/${playerId}`),
     fetch(`/api/players/${playerId}/history`),
     fetch(`/api/players/${playerId}/matches`),
     fetch(`/api/players/${playerId}/partners`),
+    fetch(`/api/players/${playerId}/activity`),
   ]);
 
   if (!playerRes.ok) {
@@ -24,6 +25,7 @@ async function loadProfile() {
   const history = await historyRes.json();
   const matches = await matchesRes.json();
   const partners = await partnersRes.json();
+  const activity = await activityRes.json();
 
   document.title = `${player.name} – Pickleball ELO`;
 
@@ -31,7 +33,7 @@ async function loadProfile() {
   const rankings = await rankRes.json();
   const rank = rankings.findIndex(p => p.id === player.id) + 1;
 
-  renderProfile(player, rank, history, matches, partners);
+  renderProfile(player, rank, history, matches, partners, activity);
 }
 
 function computeBadges(player, rank, matches, history) {
@@ -78,7 +80,7 @@ function computeBadges(player, rank, matches, history) {
   return badges;
 }
 
-function renderProfile(player, rank, history, matches, partners) {
+function renderProfile(player, rank, history, matches, partners, activity) {
   const initials = player.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
 
@@ -153,13 +155,134 @@ function renderProfile(player, rank, history, matches, partners) {
       </div>
     </div>
 
-    <div class="card" style="margin-top:1.5rem">
-      <h3>Partner Stats</h3>
-      ${renderPartners(partners)}
+    <div class="grid-2" style="margin-top:1.5rem">
+      <div class="card">
+        ${renderActivity(activity)}
+      </div>
+      <div class="card">
+        <h3>Partner Stats</h3>
+        ${renderPartners(partners)}
+      </div>
     </div>
   `;
 
   renderChart(player, history);
+}
+
+function renderActivity(activity) {
+  const map = {};
+  let totalGames = 0;
+  for (const r of activity) {
+    map[r.day] = { wins: r.wins, losses: r.losses };
+    totalGames += r.wins + r.losses;
+  }
+
+  const CELL = 12, GAP = 3, COL = CELL + GAP;
+
+  function cellBg(wins, losses) {
+    const n = wins + losses;
+    if (!n) return '';
+    const wr = wins / n;
+    const a = Math.min(0.95, 0.3 + n * 0.22).toFixed(2);
+    if (wr >= 0.6) return `rgba(0,212,170,${a})`;
+    if (wr <= 0.4) return `rgba(255,83,112,${a})`;
+    return `rgba(108,99,255,${a})`;
+  }
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 119);
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - startDate.getDay()); // back to Sunday
+
+  const weeks = [];
+  const monthSpans = [];
+  let lastMonth = -1;
+  const d = new Date(startDate);
+
+  while (d <= today) {
+    const weekStart = new Date(d);
+    const mon = weekStart.getMonth();
+    if (mon !== lastMonth) {
+      monthSpans.push({ label: weekStart.toLocaleString('en-US', { month: 'short' }), cols: 1 });
+      lastMonth = mon;
+    } else {
+      monthSpans[monthSpans.length - 1].cols++;
+    }
+
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const ds = d.toISOString().slice(0, 10);
+      week.push({ ds, future: d > today, ...(map[ds] || { wins: 0, losses: 0 }) });
+      d.setDate(d.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  const monthRow = monthSpans.map(m =>
+    `<div style="width:${m.cols * COL}px;font-size:0.65rem;color:var(--text-muted);overflow:hidden;white-space:nowrap">${m.label}</div>`
+  ).join('');
+
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dayLabels = dayNames.map(n => `<div class="ah-day-label">${n}</div>`).join('');
+
+  const grid = weeks.map(week => {
+    const cells = week.map(({ ds, future, wins, losses }) => {
+      if (future) return `<div class="ah-cell" style="opacity:0"></div>`;
+      const bg = cellBg(wins, losses);
+      const n = wins + losses;
+      const tip = n ? `${ds}: ${wins}W ${losses}L` : ds;
+      return `<div class="ah-cell"${bg ? ` style="background:${bg}"` : ''} title="${tip}"></div>`;
+    }).join('');
+    return `<div class="ah-week">${cells}</div>`;
+  }).join('');
+
+  const legendSamples = [{w:0,l:0},{w:0,l:1},{w:1,l:1},{w:1,l:0},{w:3,l:0}];
+  const legend = legendSamples.map(({w,l}) => {
+    const bg = cellBg(w, l);
+    return `<div class="ah-cell"${bg ? ` style="background:${bg}"` : ''}></div>`;
+  }).join('');
+
+  // Side stats
+  const activeDays = activity.length;
+  const now = new Date();
+  const thisMonthStr = now.toISOString().slice(0, 7); // "YYYY-MM"
+  const monthName = now.toLocaleString('en-US', { month: 'long' });
+  let monthWins = 0, monthLosses = 0;
+  for (const r of activity) {
+    if (r.day.startsWith(thisMonthStr)) { monthWins += r.wins; monthLosses += r.losses; }
+  }
+
+  return `
+    <div class="activity-heatmap">
+      <div class="ah-header">
+        <span class="ah-title">Recent Activity</span>
+        <span class="text-muted" style="font-size:0.8rem">Last 120 Days · ${totalGames} games</span>
+      </div>
+      <div class="ah-body">
+        <div class="ah-day-labels">${dayLabels}</div>
+        <div class="ah-scroll">
+          <div class="ah-months">${monthRow}</div>
+          <div class="ah-grid">${grid}</div>
+        </div>
+        <div class="ah-side-stats">
+          <div class="ah-side-stat">
+            <div class="ah-side-value">${activeDays}</div>
+            <div class="ah-side-label">Active Days</div>
+          </div>
+          <div class="ah-side-stat">
+            <div class="ah-side-value" style="font-size:0.95rem">${monthWins}W – ${monthLosses}L</div>
+            <div class="ah-side-label">${monthName}</div>
+          </div>
+        </div>
+      </div>
+      <div class="ah-footer">
+        <span style="font-size:0.75rem;color:var(--text-muted)">🟢 win day &nbsp;🔴 loss day &nbsp;🟣 mixed</span>
+        <span class="ah-legend"><span style="font-size:0.75rem;color:var(--text-muted)">less</span>${legend}<span style="font-size:0.75rem;color:var(--text-muted)">more</span></span>
+      </div>
+    </div>
+  `;
 }
 
 function renderPartners(partners) {

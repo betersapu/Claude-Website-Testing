@@ -602,6 +602,115 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
 .btn-danger { background: var(--loss); color: #fff; }
 .btn-danger:hover { background: #ff3355; }
 
+/* ── Activity heatmap ────────────────────────────────────────────────────── */
+.activity-heatmap { user-select: none; }
+
+.ah-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ah-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ah-body {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.ah-day-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 18px;
+  flex-shrink: 0;
+}
+
+.ah-day-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  height: 12px;
+  line-height: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ah-scroll { overflow-x: auto; }
+
+.ah-months {
+  display: flex;
+  margin-bottom: 4px;
+  height: 14px;
+}
+
+.ah-grid {
+  display: flex;
+  gap: 3px;
+}
+
+.ah-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ah-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+
+.ah-side-stats {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+  padding-left: 1rem;
+  flex: 1;
+}
+
+.ah-side-stat { text-align: center; }
+
+.ah-side-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.ah-side-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+}
+
+.ah-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ah-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 /* ── Player badges ───────────────────────────────────────────────────────── */
 .player-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 

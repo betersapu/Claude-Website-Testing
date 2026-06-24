@@ -466,4 +466,24 @@ app.delete('/api/matches/:id', (req, res) => {
   });
 });
 
+// Get daily activity for a player (last 120 days)
+app.get('/api/players/:id/activity', (req, res) => {
+  const { id } = req.params;
+  db.all(
+    `SELECT date(played_at) as day,
+            SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN loser_id  = ? THEN 1 ELSE 0 END) as losses
+     FROM matches
+     WHERE (winner_id = ? OR loser_id = ?)
+       AND played_at >= date('now', '-120 days')
+     GROUP BY date(played_at)
+     ORDER BY day ASC`,
+    [id, id, id, id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows || []);
+    }
+  );
+});
+
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
