@@ -49,10 +49,14 @@ db.serialize(() => {
   // Seed an empty volume DB (e.g. fresh Railway deploy) from the bundled elo.db.
   // Only runs when using a separate DB path AND the players table is empty, so it
   // never overwrites live data.
+  console.log(`[startup] using database: ${dbPath}`);
+
   if (dbPath !== bundledDb && fs.existsSync(bundledDb)) {
     db.get(`SELECT COUNT(*) AS c FROM players`, (err, row) => {
-      if (err || !row || row.c > 0) return; // already has data — leave it alone
+      if (err) return console.log(`[startup] DB check failed: ${err.message}`);
+      if (row.c > 0) return logPlayerCount(); // already has data — leave it alone
 
+      console.log('[startup] empty volume detected — seeding from bundled elo.db');
       const seedSql = bundledDb.replace(/'/g, "''");
       db.serialize(() => {
         db.run(`ATTACH DATABASE '${seedSql}' AS seed`);
@@ -63,12 +67,23 @@ db.serialize(() => {
                 SELECT id, winner_id, loser_id, winner_rating_before, loser_rating_before,
                        winner_rating_after, loser_rating_after, winner_score, loser_score, played_at FROM seed.matches`);
         db.run(`DETACH DATABASE seed`, (e) => {
-          if (e) console.error('Seed failed:', e.message);
-          else console.log('Seeded database from bundled elo.db');
+          if (e) console.error('[startup] seed FAILED:', e.message);
+          else console.log('[startup] seeded database from bundled elo.db');
+          logPlayerCount();
         });
       });
     });
+  } else {
+    logPlayerCount();
   }
 });
 
+function logPlayerCount() {
+  db.get('SELECT COUNT(*) AS c FROM players', (err, row) => {
+    if (err) console.log(`[startup] player count check failed: ${err.message}`);
+    else console.log(`[startup] players in database: ${row.c}`);
+  });
+}
+
+db.dbPath = dbPath;
 module.exports = db;
