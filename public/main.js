@@ -3,8 +3,9 @@ async function fetchData() {
     fetch('/api/rankings'),
     fetch('/api/matches'),
   ]);
-  renderRankings(await rankingsRes.json());
-  renderRecent(await matchesRes.json());
+  const players = await rankingsRes.json();
+  renderRankings(players);
+  renderRecent(await matchesRes.json(), players);
 }
 
 function renderRankings(players) {
@@ -56,25 +57,34 @@ function expectedWinProb(wRating, lRating) {
   return 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
 }
 
-// Generate game tags based on score and probability
-function gameTags(m, partner, prob) {
+// Generate game tags based on score, probability, and context
+function gameTags(m, partner, prob, isRematch, topSeedId) {
   const tags = [];
   const ws = m.winner_score;
   const ls = m.loser_score;
   const hasScore = ws != null && ls != null;
   const margin = hasScore ? ws - ls : null;
 
-  if (prob < 40)             tags.push({ label: '🔥 Upset',      cls: 'tag-upset'   });
-  if (prob >= 75)            tags.push({ label: '⭐ Favored',    cls: 'tag-favored' });
-  if (hasScore && margin <= 2) tags.push({ label: '⚔️ Close Game', cls: 'tag-close'   });
-  if (hasScore && margin >= 7) tags.push({ label: '💥 Stomp',     cls: 'tag-stomp'   });
-  if (hasScore && ls === 0)  tags.push({ label: '🏆 Shutout',    cls: 'tag-shutout' });
+  const winnerIds = [m.winner_id, partner?.winner_id].filter(Boolean);
+  const loserIds  = [m.loser_id,  partner?.loser_id ].filter(Boolean);
+
+  if (prob < 40)               tags.push({ label: '🔥 Upset',           cls: 'tag-upset',        tip: 'The underdog team won' });
+  if (prob >= 75)              tags.push({ label: '⭐ Favored',          cls: 'tag-favored',      tip: 'The favored team won as expected' });
+  if (hasScore && margin <= 2) tags.push({ label: '⚔️ Close Game',       cls: 'tag-close',        tip: 'Won by 2 points or fewer' });
+  if (hasScore && margin >= 7) tags.push({ label: '💥 Stomp',            cls: 'tag-stomp',        tip: 'Won by 7 points or more' });
+  if (hasScore && ls === 0 && ws === 11)
+                               tags.push({ label: '🎯 Ace',              cls: 'tag-shutout',      tip: 'Perfect game — 11-0' });
+  if (topSeedId && winnerIds.includes(topSeedId))
+                               tags.push({ label: '👑 Top Seed',         cls: 'tag-topseed',      tip: 'The #1 ranked player won this match' });
+  if (topSeedId && loserIds.includes(topSeedId))
+                               tags.push({ label: '💀 Top Seed Falls',   cls: 'tag-topseed-loss', tip: 'The #1 ranked player lost this match' });
+  if (isRematch)               tags.push({ label: '🔁 Rematch',          cls: 'tag-rematch',      tip: 'These two teams have faced off before' });
 
   return tags;
 }
 
 // Group the two stored rows per doubles game into single games, then show the most recent.
-function renderRecent(matches) {
+function renderRecent(matches, players) {
   const el = document.getElementById('recent-container');
   if (!matches.length) {
     el.innerHTML = '<p class="empty-state">No games played yet.</p>';
@@ -88,6 +98,8 @@ function renderRecent(matches) {
     const partner = matches.find(n =>
       n.id !== m.id && !seen.has(n.id) &&
       n.played_at === m.played_at &&
+      n.winner_score === m.winner_score &&
+      n.loser_score === m.loser_score &&
       n.winner_id !== m.winner_id && n.loser_id !== m.loser_id
     );
     if (partner) {
@@ -100,13 +112,27 @@ function renderRecent(matches) {
   }
 
   const recent = grouped.slice(0, 10);
+  const topSeedId = players && players[0] ? players[0].id : null;
+
+  // Build combo keys preserving team composition (not just player set)
+  function comboKey(m, partner) {
+    const t1 = [m.winner_id, partner?.winner_id].filter(Boolean).sort().join(',');
+    const t2 = [m.loser_id,  partner?.loser_id ].filter(Boolean).sort().join(',');
+    return [t1, t2].sort().join('|');
+  }
 
   el.innerHTML = `
     <table class="rankings-table">
       <thead>
         <tr><th>Date</th><th>Winners</th><th>Score</th><th>Losers</th></tr>
       </thead>
-      ${recent.map(({ m, partner }) => {
+      ${recent.map(({ m, partner }, gameIdx) => {
+          const key = comboKey(m, partner);
+          const isRematch = recent.some(({ m: om, partner: op }, otherIdx) =>
+            otherIdx > gameIdx &&
+            otherIdx - gameIdx <= 4 &&
+            comboKey(om, op) === key
+          );
           const w2 = partner ? ` & <a href="/profile.html?id=${partner.winner_id}" class="player-link">${escHtml(partner.winner_name)}</a>` : '';
           const l2 = partner ? ` & <a href="/profile.html?id=${partner.loser_id}" class="player-link">${escHtml(partner.loser_name)}</a>` : '';
           const scoreStr = (m.winner_score != null && m.loser_score != null)
@@ -119,9 +145,9 @@ function renderRecent(matches) {
           const lAvg = partner ? (m.loser_rating_before  + partner.loser_rating_before)  / 2 : m.loser_rating_before;
           const prob = Math.round(expectedWinProb(wAvg, lAvg) * 100);
 
-          const tags = gameTags(m, partner, prob);
-          const probTag = `<span class="game-tag tag-prob">📊 Winners: ${prob}%</span>`;
-          const allTags = [probTag, ...tags.map(t => `<span class="game-tag ${t.cls}">${t.label}</span>`)];
+          const tags = gameTags(m, partner, prob, isRematch, topSeedId);
+          const probTag = `<span class="game-tag tag-prob" data-tip="Win probability for the winning team going into this match">📊 Winners: ${prob}%</span>`;
+          const allTags = [probTag, ...tags.map(t => `<span class="game-tag ${t.cls}" data-tip="${t.tip}">${t.label}</span>`)];
 
           // Rating deltas
           function delta(after, before) {
