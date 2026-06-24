@@ -205,6 +205,11 @@ select option { background: var(--surface2); }
 .text-muted { color: var(--text-muted); }
 
 .streak-win  { color: var(--win);  font-weight: 700; font-size: 0.85rem; }
+
+.form-dots { display: flex; gap: 0.3rem; align-items: center; }
+.form-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.form-dot.form-w { background: var(--win); }
+.form-dot.form-l { background: var(--loss); }
 .streak-loss { color: var(--loss); font-weight: 700; font-size: 0.85rem; }
 
 .prob-badge {

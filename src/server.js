@@ -102,15 +102,31 @@ app.get('/api/rankings', (req, res) => {
      FROM players ORDER BY rating DESC`,
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      // Attach streak to each player
-      let remaining = rows.length;
-      if (!remaining) return res.json(rows);
-      rows.forEach(p => {
-        calcStreak(p.id, streak => {
-          p.streak = streak;
-          if (--remaining === 0) res.json(rows);
-        });
-      });
+      if (!rows.length) return res.json(rows);
+
+      // Build form (last 5 results) for all players in one query
+      db.all(
+        `SELECT winner_id, loser_id FROM matches ORDER BY played_at DESC, id DESC`,
+        (err, matches) => {
+          const formMap = {};
+          for (const m of (matches || [])) {
+            if (!formMap[m.winner_id]) formMap[m.winner_id] = [];
+            if (!formMap[m.loser_id])  formMap[m.loser_id]  = [];
+            if (formMap[m.winner_id].length < 5) formMap[m.winner_id].push('W');
+            if (formMap[m.loser_id].length  < 5) formMap[m.loser_id].push('L');
+          }
+          rows.forEach(p => { p.form = formMap[p.id] || []; });
+
+          // Attach streak to each player
+          let remaining = rows.length;
+          rows.forEach(p => {
+            calcStreak(p.id, streak => {
+              p.streak = streak;
+              if (--remaining === 0) res.json(rows);
+            });
+          });
+        }
+      );
     }
   );
 });
@@ -235,6 +251,38 @@ app.get('/api/players/:id/history', (req, res) => {
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json(rows);
+    }
+  );
+});
+
+// Get partner stats for a player
+app.get('/api/players/:id/partners', (req, res) => {
+  const id = parseInt(req.params.id);
+  db.all(
+    `SELECT partner_id, partner_name,
+            SUM(CASE WHEN result='W' THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN result='L' THEN 1 ELSE 0 END) as losses
+     FROM (
+       SELECT p.winner_id as partner_id, pw.name as partner_name, 'W' as result
+       FROM matches m
+       JOIN matches p ON p.played_at = m.played_at AND p.id != m.id
+                      AND p.winner_id != m.winner_id AND p.loser_id != m.loser_id
+       JOIN players pw ON pw.id = p.winner_id
+       WHERE m.winner_id = ?
+       UNION ALL
+       SELECT p.loser_id as partner_id, pl.name as partner_name, 'L' as result
+       FROM matches m
+       JOIN matches p ON p.played_at = m.played_at AND p.id != m.id
+                      AND p.winner_id != m.winner_id AND p.loser_id != m.loser_id
+       JOIN players pl ON pl.id = p.loser_id
+       WHERE m.loser_id = ?
+     )
+     GROUP BY partner_id, partner_name
+     ORDER BY CAST(wins AS REAL) / (wins + losses) DESC`,
+    [id, id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows || []);
     }
   );
 });

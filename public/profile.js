@@ -8,10 +8,11 @@ if (!playerId) {
 }
 
 async function loadProfile() {
-  const [playerRes, historyRes, matchesRes] = await Promise.all([
+  const [playerRes, historyRes, matchesRes, partnersRes] = await Promise.all([
     fetch(`/api/players/${playerId}`),
     fetch(`/api/players/${playerId}/history`),
     fetch(`/api/players/${playerId}/matches`),
+    fetch(`/api/players/${playerId}/partners`),
   ]);
 
   if (!playerRes.ok) {
@@ -22,6 +23,7 @@ async function loadProfile() {
   const player = await playerRes.json();
   const history = await historyRes.json();
   const matches = await matchesRes.json();
+  const partners = await partnersRes.json();
 
   document.title = `${player.name} – Pickleball ELO`;
 
@@ -29,10 +31,10 @@ async function loadProfile() {
   const rankings = await rankRes.json();
   const rank = rankings.findIndex(p => p.id === player.id) + 1;
 
-  renderProfile(player, rank, history, matches);
+  renderProfile(player, rank, history, matches, partners);
 }
 
-function renderProfile(player, rank, history, matches) {
+function renderProfile(player, rank, history, matches, partners) {
   const initials = player.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
 
@@ -90,9 +92,37 @@ function renderProfile(player, rank, history, matches) {
         <div id="matches-list">${renderMatches(matches, player.id)}</div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:1.5rem">
+      <h3>Partner Stats</h3>
+      ${renderPartners(partners)}
+    </div>
   `;
 
   renderChart(player, history);
+}
+
+function renderPartners(partners) {
+  if (!partners.length) return '<p class="empty-state">No partner data yet.</p>';
+  const rows = partners.map(p => {
+    const total = p.wins + p.losses;
+    const wr = Math.round(p.wins * 100 / total);
+    const formColor = wr >= 60 ? 'var(--win)' : wr <= 40 ? 'var(--loss)' : 'var(--text)';
+    return `
+      <tr>
+        <td><a href="/profile.html?id=${p.partner_id}" class="player-link">${escHtml(p.partner_name)}</a></td>
+        <td>${p.wins}W – ${p.losses}L</td>
+        <td>${total}</td>
+        <td style="color:${formColor};font-weight:600">${wr}%</td>
+      </tr>`;
+  }).join('');
+  return `
+    <table class="rankings-table">
+      <thead>
+        <tr><th>Partner</th><th>Record</th><th>Games</th><th>Win Rate</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function renderMatches(matches, playerId) {

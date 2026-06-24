@@ -17,6 +17,9 @@ function renderRankings(players) {
   const rows = players.map((p, i) => {
     const rank = i + 1;
     const rankClass = rank <= 3 ? `rank-${rank}` : '';
+    const formDots = (p.form || []).map(r =>
+      `<span class="form-dot form-${r === 'W' ? 'w' : 'l'}"></span>`
+    ).join('');
     return `
       <tr>
         <td><span class="rank-num ${rankClass}">${rank}</span></td>
@@ -25,6 +28,7 @@ function renderRankings(players) {
         <td class="win-rate">${p.win_rate}%</td>
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>
         <td>${p.wins + p.losses}</td>
+        <td><div class="form-dots">${formDots}</div></td>
       </tr>
     `;
   }).join('');
@@ -39,6 +43,7 @@ function renderRankings(players) {
           <th>Win Rate</th>
           <th>Record</th>
           <th>Games</th>
+          <th>Form</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
