@@ -97,7 +97,7 @@ function calcStreak(playerId, callback) {
 // Get all players ranked by rating
 app.get('/api/rankings', (req, res) => {
   db.all(
-    `SELECT id, name, rating, peak_rating, wins, losses,
+    `SELECT id, name, rating, rd, peak_rating, wins, losses,
             CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate
      FROM players ORDER BY rating DESC`,
     (err, rows) => {
