@@ -6,6 +6,9 @@
     "start": "node src/server.js",
     "bot": "node src/bot.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
