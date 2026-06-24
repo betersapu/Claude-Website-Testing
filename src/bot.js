@@ -214,7 +214,7 @@ client.on('interactionCreate', async interaction => {
                FROM matches WHERE winner_id = ? OR loser_id = ?
                ORDER BY played_at DESC, id DESC`,
               [player.id, player.id, player.id],
-              (err, streakRows) => {
+              async (err, streakRows) => {
                 let streakStr = '—';
                 if (!err && streakRows.length) {
                   const first = streakRows[0].result;
