@@ -13,6 +13,13 @@ function expectedScore(ratingA, ratingB) {
   return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
 }
 
+// Scale K by score margin: no score = K as-is, larger margin = higher K (capped at 2×)
+function adjustedK(winnerScore, loserScore) {
+  if (winnerScore == null || loserScore == null) return K;
+  const margin = Math.max(1, winnerScore - loserScore);
+  return K * Math.min(2, Math.log(1 + margin) / Math.log(1 + 1));
+}
+
 // Get all players ranked by rating
 app.get('/api/rankings', (req, res) => {
   db.all(
@@ -77,8 +84,9 @@ app.post('/api/matches', (req, res) => {
     const ew = expectedScore(teamWinRating, teamLoseRating);
     const el = expectedScore(teamLoseRating, teamWinRating);
 
-    const winDelta = K * (1 - ew);
-    const loseDelta = K * (0 - el);
+    const k = adjustedK(ws, ls);
+    const winDelta = k * (1 - ew);
+    const loseDelta = k * (0 - el);
 
     const updates = [
       ...winners.map(p => ({ id: p.id, ratingBefore: p.rating, ratingAfter: Math.round((p.rating + winDelta) * 10) / 10, won: 1 })),
@@ -159,20 +167,30 @@ app.get('/api/players/:id/history', (req, res) => {
   );
 });
 
-// Get recent matches for a player
+// Get recent matches for a player (with full doubles teams)
 app.get('/api/players/:id/matches', (req, res) => {
   const { id } = req.params;
   db.all(
-    `SELECT m.id, m.played_at,
-            w.id as winner_id, w.name as winner_name,
-            l.id as loser_id, l.name as loser_name,
-            m.winner_rating_before, m.winner_rating_after,
-            m.loser_rating_before, m.loser_rating_after,
-            m.winner_score, m.loser_score
+    `SELECT
+       m.id, m.played_at, m.winner_score, m.loser_score,
+       w.id  as winner_id,  w.name  as winner_name,
+       l.id  as loser_id,   l.name  as loser_name,
+       m.winner_rating_before, m.winner_rating_after,
+       m.loser_rating_before,  m.loser_rating_after,
+       pw.id as partner_winner_id, pw.name as partner_winner_name,
+       pl.id as partner_loser_id,  pl.name as partner_loser_name
      FROM matches m
-     JOIN players w ON w.id = m.winner_id
-     JOIN players l ON l.id = m.loser_id
-     WHERE m.winner_id = ? OR m.loser_id = ?
+     JOIN players w  ON w.id  = m.winner_id
+     JOIN players l  ON l.id  = m.loser_id
+     LEFT JOIN matches p ON (
+       p.played_at = m.played_at
+       AND p.id       != m.id
+       AND p.winner_id != m.winner_id
+       AND p.loser_id  != m.loser_id
+     )
+     LEFT JOIN players pw ON pw.id = p.winner_id
+     LEFT JOIN players pl ON pl.id = p.loser_id
+     WHERE (m.winner_id = ? OR m.loser_id = ?)
      ORDER BY m.played_at DESC LIMIT 20`,
     [id, id],
     (err, rows) => {
@@ -180,6 +198,94 @@ app.get('/api/players/:id/matches', (req, res) => {
       res.json(rows);
     }
   );
+});
+
+// Recalculate all ratings from scratch using current formula
+app.post('/api/recalculate', (req, res) => {
+  db.all(`SELECT * FROM players`, (err, players) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    db.all(`SELECT * FROM matches ORDER BY played_at ASC, id ASC`, (err, matches) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      // Reset all player ratings
+      const ratings = {};
+      const wins = {};
+      const losses = {};
+      players.forEach(p => { ratings[p.id] = 1200; wins[p.id] = 0; losses[p.id] = 0; });
+
+      // Group match rows into doubles games by timestamp
+      const games = [];
+      const seen = new Set();
+      for (const m of matches) {
+        if (seen.has(m.id)) continue;
+        const partner = matches.find(n =>
+          !seen.has(n.id) &&
+          n.id !== m.id &&
+          n.played_at === m.played_at &&
+          n.winner_id !== m.winner_id &&
+          n.loser_id !== m.loser_id
+        );
+        games.push({ primary: m, partner: partner || null });
+        seen.add(m.id);
+        if (partner) seen.add(partner.id);
+      }
+
+      const updates = []; // { id, winner_rating_before, winner_rating_after, loser_rating_before, loser_rating_after }
+
+      for (const { primary: m, partner } of games) {
+        const w1 = m.winner_id, l1 = m.loser_id;
+        const w2 = partner ? partner.winner_id : null;
+        const l2 = partner ? partner.loser_id : null;
+
+        const teamWin = w2 != null ? (ratings[w1] + ratings[w2]) / 2 : ratings[w1];
+        const teamLose = l2 != null ? (ratings[l1] + ratings[l2]) / 2 : ratings[l1];
+
+        const ew = expectedScore(teamWin, teamLose);
+        const el = expectedScore(teamLose, teamWin);
+        const k = adjustedK(m.winner_score, m.loser_score);
+        const winDelta = k * (1 - ew);
+        const loseDelta = k * (0 - el);
+
+        const newW1 = Math.round((ratings[w1] + winDelta) * 10) / 10;
+        const newL1 = Math.round((ratings[l1] + loseDelta) * 10) / 10;
+
+        updates.push({ id: m.id, wBefore: ratings[w1], wAfter: newW1, lBefore: ratings[l1], lAfter: newL1 });
+
+        ratings[w1] = newW1; wins[w1]++;
+        ratings[l1] = newL1; losses[l1]++;
+
+        if (partner && w2 != null && l2 != null) {
+          const newW2 = Math.round((ratings[w2] + winDelta) * 10) / 10;
+          const newL2 = Math.round((ratings[l2] + loseDelta) * 10) / 10;
+          updates.push({ id: partner.id, wBefore: ratings[w2], wAfter: newW2, lBefore: ratings[l2], lAfter: newL2 });
+          ratings[w2] = newW2; wins[w2]++;
+          ratings[l2] = newL2; losses[l2]++;
+        }
+      }
+
+      // Apply all updates in a transaction
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+        for (const u of updates) {
+          db.run(
+            `UPDATE matches SET winner_rating_before=?, winner_rating_after=?, loser_rating_before=?, loser_rating_after=? WHERE id=?`,
+            [u.wBefore, u.wAfter, u.lBefore, u.lAfter, u.id]
+          );
+        }
+        for (const p of players) {
+          db.run(
+            `UPDATE players SET rating=?, wins=?, losses=? WHERE id=?`,
+            [ratings[p.id] ?? 1200, wins[p.id] ?? 0, losses[p.id] ?? 0, p.id]
+          );
+        }
+        db.run('COMMIT', (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true, players_updated: players.length, matches_updated: updates.length });
+        });
+      });
+    });
+  });
 });
 
 // Update a player's data
@@ -237,4 +343,4 @@ app.delete('/api/matches/:id', (req, res) => {
   });
 });
 
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running at http://localhost:${PORT}`));

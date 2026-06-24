@@ -87,9 +87,8 @@ function renderMatches(matches, playerId) {
 
   return matches.map(m => {
     const won = m.winner_id === playerId;
-    const opponent = won ? m.loser_name : m.winner_name;
     const ratingBefore = won ? m.winner_rating_before : m.loser_rating_before;
-    const ratingAfter = won ? m.winner_rating_after : m.loser_rating_after;
+    const ratingAfter  = won ? m.winner_rating_after  : m.loser_rating_after;
     const delta = Math.round((ratingAfter - ratingBefore) * 10) / 10;
     const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
     const date = new Date(m.played_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -97,14 +96,31 @@ function renderMatches(matches, playerId) {
       ? `<span class="match-score">${won ? m.winner_score : m.loser_score}–${won ? m.loser_score : m.winner_score}</span>`
       : '';
 
+    // Build team arrays from the two match rows joined together
+    const myTeam = won
+      ? [{ id: m.winner_id, name: m.winner_name }, m.partner_winner_id ? { id: m.partner_winner_id, name: m.partner_winner_name } : null]
+      : [{ id: m.loser_id,  name: m.loser_name  }, m.partner_loser_id  ? { id: m.partner_loser_id,  name: m.partner_loser_name  } : null];
+    const oppTeam = won
+      ? [{ id: m.loser_id,  name: m.loser_name  }, m.partner_loser_id  ? { id: m.partner_loser_id,  name: m.partner_loser_name  } : null]
+      : [{ id: m.winner_id, name: m.winner_name }, m.partner_winner_id ? { id: m.partner_winner_id, name: m.partner_winner_name } : null];
+
+    const renderPlayer = (p) => {
+      if (!p) return '';
+      const isMe = p.id === playerId;
+      return `<a href="/profile.html?id=${p.id}" class="team-player ${isMe ? 'team-player-me' : ''}">${escHtml(p.name)}</a>`;
+    };
+
+    const myStr  = myTeam.filter(Boolean).map(renderPlayer).join('<span class="team-amp"> & </span>');
+    const oppStr = oppTeam.filter(Boolean).map(renderPlayer).join('<span class="team-amp"> & </span>');
+
     return `
       <div class="match-item">
-        <div>
+        <div class="match-item-left">
           <span class="match-result ${won ? 'win' : 'loss'}">${won ? 'WIN' : 'LOSS'}</span>
           ${scoreStr}
-          <span style="margin-left:0.5rem">vs <a href="/profile.html?id=${won ? m.loser_id : m.winner_id}" style="color:var(--text);text-decoration:none;font-weight:600">${escHtml(opponent)}</a></span>
+          <span class="match-teams">${myStr}<span class="team-vs-text"> vs </span>${oppStr}</span>
         </div>
-        <div style="text-align:right">
+        <div style="text-align:right;flex-shrink:0">
           <span class="rating-change ${delta >= 0 ? 'up' : 'down'}">${deltaStr}</span>
           <span class="text-muted" style="margin-left:0.6rem;font-size:0.78rem">${date}</span>
         </div>

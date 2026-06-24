@@ -113,8 +113,10 @@ function renderMatches(matches) {
                 ${l2}
               </td>
               <td>
-                <span class="rating-change up">+${delta}</span>
-                <span class="rating-change down" style="margin-left:0.25rem">−${Math.abs(Math.round((m.loser_rating_after - m.loser_rating_before) * 10) / 10)}</span>
+                <span class="delta-pair">
+                  <span class="rating-change up">+${delta}</span>
+                  <span class="rating-change down">−${Math.abs(Math.round((m.loser_rating_after - m.loser_rating_before) * 10) / 10)}</span>
+                </span>
               </td>
               <td>
                 <button class="btn-delete" onclick="confirmDelete('match',${JSON.stringify(ids)},'this match')">✕</button>
