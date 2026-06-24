@@ -27,6 +27,18 @@ app.use('/api', (req, res, next) => {
 // Lets the admin page verify the password before revealing the edit UI.
 app.post('/api/auth', (req, res) => res.json({ ok: true }));
 
+// Download a backup of the live SQLite database. Password-protected (it contains
+// all data); checked here explicitly since the global guard only covers mutations.
+app.get('/api/export', (req, res) => {
+  if (req.get('x-admin-password') !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect or missing admin password' });
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.download(db.dbPath, `elo-backup-${stamp}.db`, (err) => {
+    if (err && !res.headersSent) res.status(500).json({ error: 'Export failed' });
+  });
+});
+
 // Glicko-2 settings
 const G2_DEFAULTS = { tau: 0.5, rating: 1500, rd: 350, vol: 0.06 };
 

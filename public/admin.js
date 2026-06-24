@@ -54,6 +54,31 @@ document.getElementById('lock-btn').addEventListener('click', () => {
   showGate();
 });
 
+// Download a backup copy of the live database
+document.getElementById('export-btn').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/export', { headers: { 'x-admin-password': adminPassword || '' } });
+    if (!res.ok) {
+      if (res.status === 401) { showToast('Session expired — please unlock again', 'error'); showGate(); }
+      else showToast('Export failed', 'error');
+      return;
+    }
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `elo-backup-${stamp}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Backup downloaded', 'success');
+  } catch (e) {
+    showToast('Export failed', 'error');
+  }
+});
+
 // Wrapper that attaches the admin password to every mutating request
 async function adminFetch(url, options = {}) {
   const res = await fetch(url, {
