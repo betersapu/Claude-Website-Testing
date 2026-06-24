@@ -193,13 +193,14 @@ app.get('/api/players/:id/history', (req, res) => {
   const { id } = req.params;
   db.all(
     `SELECT
-       CASE WHEN winner_id = ? THEN winner_rating_after ELSE loser_rating_after END as rating,
+       CASE WHEN winner_id = ? THEN winner_rating_after  ELSE loser_rating_after  END as rating,
+       CASE WHEN winner_id = ? THEN winner_rating_before ELSE loser_rating_before END as rating_before,
        played_at
      FROM matches
      WHERE (winner_id = ? OR loser_id = ?)
        AND played_at >= datetime('now', '-30 days')
      ORDER BY played_at ASC`,
-    [id, id, id],
+    [id, id, id, id],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json(rows);

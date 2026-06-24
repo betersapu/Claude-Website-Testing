@@ -140,18 +140,14 @@ function renderChart(player, history) {
     labels.push('Now');
     data.push(player.rating);
   } else {
-    // Add a "start" point showing rating before first match in range
-    const firstMatch = history[0];
-    labels.push('');
-    data.push(null); // placeholder filled below
+    // Start point: rating before the first match in the window
+    labels.push('Start');
+    data.push(history[0].rating_before);
 
-    history.forEach((h, i) => {
+    history.forEach(h => {
       labels.push(formatDateTime(h.played_at));
       data.push(h.rating);
     });
-
-    // Fill the first placeholder with a reasonable start (extrapolated)
-    data[0] = data[1] ?? player.rating;
   }
 
   new Chart(ctx, {
