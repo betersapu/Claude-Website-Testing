@@ -10,6 +10,20 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Auto-migration: ensure discord_id column exists and is populated
+db.run(`ALTER TABLE players ADD COLUMN discord_id TEXT`, () => {});
+const discordIds = [
+  ['519315420881223681', 'Connor'],
+  ['635318504307949572', 'Sean'],
+  ['412064493527498757', 'Jacky'],
+  ['690691835882111027', 'Ketan'],
+  ['513132503477911563', 'Jake'],
+];
+for (const [discordId, name] of discordIds) {
+  db.run(`UPDATE players SET discord_id = ? WHERE name = ? AND (discord_id IS NULL OR discord_id = '')`,
+    [discordId, name]);
+}
+
 // Shared admin password protecting all data-changing endpoints.
 // Override on the host by setting the ADMIN_PASSWORD environment variable.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'hamster';
