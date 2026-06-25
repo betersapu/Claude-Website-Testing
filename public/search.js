@@ -10,11 +10,9 @@
   window.addEventListener('resize', updatePlaceholder);
 
   let players = [];
-  let avatars = {};
   try {
-    const [rankRes, avRes] = await Promise.all([fetch('/api/rankings'), fetch('/api/avatars')]);
+    const rankRes = await fetch('/api/rankings');
     players = await rankRes.json();
-    if (avRes.ok) avatars = await avRes.json();
   } catch (e) {}
 
   function esc(str) {
@@ -26,15 +24,10 @@
       dropdown.innerHTML = '<div class="search-empty">No players found</div>';
     } else {
       dropdown.innerHTML = results.map(p => {
-        const initials = p.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
         const wr = p.win_rate;
         const wrColor = wr >= 55 ? 'var(--win)' : wr <= 45 ? 'var(--loss)' : 'var(--text-muted)';
-        const avatarInner = avatars[p.id]
-          ? `<img src="${avatars[p.id]}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`
-          : esc(initials);
         return `
           <a href="/profile.html?id=${p.id}" class="search-result">
-            <div class="search-avatar">${avatarInner}</div>
             <div class="search-info">
               <div class="search-name">${esc(p.name)}</div>
               <div class="search-meta">${p.rating} ELO &nbsp;·&nbsp; <span style="color:${wrColor}">${wr}%</span></div>
