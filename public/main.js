@@ -1,14 +1,16 @@
 async function fetchData() {
-  const [rankingsRes, matchesRes] = await Promise.all([
+  const [rankingsRes, matchesRes, avatarsRes] = await Promise.all([
     fetch('/api/rankings'),
     fetch('/api/matches'),
+    fetch('/api/avatars'),
   ]);
   const players = await rankingsRes.json();
-  renderRankings(players);
+  const avatars = avatarsRes.ok ? await avatarsRes.json() : {};
+  renderRankings(players, avatars);
   renderRecent(await matchesRes.json(), players);
 }
 
-function renderRankings(players) {
+function renderRankings(players, avatars = {}) {
   const container = document.getElementById('rankings-container');
   if (!players.length) {
     container.innerHTML = '<p class="empty-state">No players yet.</p>';
@@ -21,10 +23,19 @@ function renderRankings(players) {
     const formDots = (p.form || []).map(r =>
       `<span class="form-dot form-${r === 'W' ? 'w' : 'l'}"></span>`
     ).join('');
+    const initials = p.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    const avatarInner = avatars[p.id]
+      ? `<img src="${avatars[p.id]}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`
+      : initials;
     return `
       <tr>
         <td><span class="rank-num ${rankClass}">${rank}</span></td>
-        <td><a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.6rem">
+            <div class="avatar avatar-sm">${avatarInner}</div>
+            <a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a>
+          </div>
+        </td>
         <td><span class="rating-badge">${p.rating}</span></td>
         <td class="win-rate">${p.win_rate}%</td>
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>
@@ -105,7 +116,7 @@ function h2hWinProb(winnerIds, loserIds, h2h) {
 }
 
 // Generate game tags based on score, probability, and context
-function gameTags(m, partner, prob, isRematch, topSeedId) {
+function gameTags(m, partner, prob, isRematch, topSeedId, topSeedName) {
   const tags = [];
   const ws = m.winner_score;
   const ls = m.loser_score;
@@ -122,9 +133,9 @@ function gameTags(m, partner, prob, isRematch, topSeedId) {
   if (hasScore && ls === 0 && ws === 11)
                                tags.push({ label: '🎯 Ace',              cls: 'tag-shutout',      tip: 'Perfect game — 11-0' });
   if (topSeedId && winnerIds.includes(topSeedId))
-                               tags.push({ label: '👑 Top Seed',         cls: 'tag-topseed',      tip: 'The #1 ranked player won this match' });
+                               tags.push({ label: '👑 Top Seed',         cls: 'tag-topseed',      tip: `The top seed prevailed — ${topSeedName || 'the #1 player'}'s team wins` });
   if (topSeedId && loserIds.includes(topSeedId))
-                               tags.push({ label: '💀 Top Seed Falls',   cls: 'tag-topseed-loss', tip: 'The #1 ranked player lost this match' });
+                               tags.push({ label: '💀 Top Seed Falls',   cls: 'tag-topseed-loss', tip: `The top seed falls — ${topSeedName || 'the #1 player'}'s team loses` });
   if (isRematch)               tags.push({ label: '🔁 Rematch',          cls: 'tag-rematch',      tip: 'These two teams have faced off before' });
 
   return tags;
@@ -159,7 +170,8 @@ function renderRecent(matches, players) {
   }
 
   const recent = grouped.slice(0, 10);
-  const topSeedId = players && players[0] ? players[0].id : null;
+  const topSeedId   = players && players[0] ? players[0].id   : null;
+  const topSeedName = players && players[0] ? players[0].name : null;
   const h2h = buildH2H(matches);
 
   // Build combo keys preserving team composition (not just player set)
@@ -200,7 +212,7 @@ function renderRecent(matches, players) {
       ? Math.round(h2hResult * 100)
       : Math.round(expectedWinProb(wAvg, lAvg) * 100);
 
-    const tags    = gameTags(m, partner, prob, isRematch, topSeedId);
+    const tags    = gameTags(m, partner, prob, isRematch, topSeedId, topSeedName);
     const probTag = `<span class="game-tag tag-prob" data-tip="Win probability for the winning team going into this match">📊 Winners: ${prob}%</span>`;
     const allTags = [probTag, ...tags.map(t => `<span class="game-tag ${t.cls}" data-tip="${t.tip}">${t.label}</span>`)];
 
