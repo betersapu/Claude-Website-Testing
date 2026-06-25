@@ -467,12 +467,20 @@ app.delete('/api/matches/:id', (req, res) => {
   });
 });
 
-// Get all players' Discord avatars in one call
+// Get all players' Discord avatars — static files first, Discord API fallback
 app.get('/api/avatars', async (req, res) => {
   db.all('SELECT id, discord_id FROM players WHERE discord_id IS NOT NULL', async (err, players) => {
     if (err) return res.status(500).json({ error: err.message });
     const result = {};
     await Promise.all(players.map(async p => {
+      // Prefer static asset committed to the repo
+      const staticPath = path.join(__dirname, '../public/avatars', `${p.id}.png`);
+      if (require('fs').existsSync(staticPath)) {
+        result[p.id] = `/avatars/${p.id}.png`;
+        return;
+      }
+      // Fall back to Discord API if token is available
+      if (!process.env.DISCORD_TOKEN) return;
       try {
         const r = await fetch(`https://discord.com/api/v10/users/${p.discord_id}`, {
           headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` }
@@ -487,10 +495,16 @@ app.get('/api/avatars', async (req, res) => {
   });
 });
 
-// Get a player's Discord avatar URL via the bot token
+// Get a single player's Discord avatar URL — static file first, Discord API fallback
 app.get('/api/players/:id/avatar', (req, res) => {
-  db.get('SELECT discord_id FROM players WHERE id = ?', [req.params.id], async (err, player) => {
+  const id = req.params.id;
+  const staticPath = path.join(__dirname, '../public/avatars', `${id}.png`);
+  if (require('fs').existsSync(staticPath)) {
+    return res.json({ url: `/avatars/${id}.png` });
+  }
+  db.get('SELECT discord_id FROM players WHERE id = ?', [id], async (err, player) => {
     if (err || !player || !player.discord_id) return res.status(404).json({ error: 'No Discord ID' });
+    if (!process.env.DISCORD_TOKEN) return res.status(503).json({ error: 'No token' });
     try {
       const r = await fetch(`https://discord.com/api/v10/users/${player.discord_id}`, {
         headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` }
