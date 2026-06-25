@@ -1,14 +1,16 @@
 async function fetchData() {
-  const [rankingsRes, matchesRes] = await Promise.all([
+  const [rankingsRes, matchesRes, avatarsRes] = await Promise.all([
     fetch('/api/rankings'),
     fetch('/api/matches'),
+    fetch('/api/avatars'),
   ]);
   const players = await rankingsRes.json();
-  renderRankings(players);
+  const avatars = avatarsRes.ok ? await avatarsRes.json() : {};
+  renderRankings(players, avatars);
   renderRecent(await matchesRes.json(), players);
 }
 
-function renderRankings(players) {
+function renderRankings(players, avatars = {}) {
   const container = document.getElementById('rankings-container');
   if (!players.length) {
     container.innerHTML = '<p class="empty-state">No players yet.</p>';
@@ -21,10 +23,19 @@ function renderRankings(players) {
     const formDots = (p.form || []).map(r =>
       `<span class="form-dot form-${r === 'W' ? 'w' : 'l'}"></span>`
     ).join('');
+    const initials = p.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    const avatarInner = avatars[p.id]
+      ? `<img src="${avatars[p.id]}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`
+      : initials;
     return `
       <tr>
         <td><span class="rank-num ${rankClass}">${rank}</span></td>
-        <td><a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.6rem">
+            <div class="avatar avatar-sm">${avatarInner}</div>
+            <a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a>
+          </div>
+        </td>
         <td><span class="rating-badge">${p.rating}</span></td>
         <td class="win-rate">${p.win_rate}%</td>
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>

@@ -396,6 +396,21 @@ tr:has(+ .tags-row) td { border-bottom: none; }
   flex-shrink: 0;
 }
 
+.avatar-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

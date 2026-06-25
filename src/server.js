@@ -467,6 +467,26 @@ app.delete('/api/matches/:id', (req, res) => {
   });
 });
 
+// Get all players' Discord avatars in one call
+app.get('/api/avatars', async (req, res) => {
+  db.all('SELECT id, discord_id FROM players WHERE discord_id IS NOT NULL', async (err, players) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const result = {};
+    await Promise.all(players.map(async p => {
+      try {
+        const r = await fetch(`https://discord.com/api/v10/users/${p.discord_id}`, {
+          headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` }
+        });
+        const user = await r.json();
+        result[p.id] = user.avatar
+          ? `https://cdn.discordapp.com/avatars/${p.discord_id}/${user.avatar}.png?size=64`
+          : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(p.discord_id) % 6n)}.png`;
+      } catch (e) {}
+    }));
+    res.json(result);
+  });
+});
+
 // Get a player's Discord avatar URL via the bot token
 app.get('/api/players/:id/avatar', (req, res) => {
   db.get('SELECT discord_id FROM players WHERE id = ?', [req.params.id], async (err, player) => {
