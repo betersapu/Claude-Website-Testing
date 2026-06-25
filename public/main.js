@@ -52,9 +52,56 @@ function renderRankings(players) {
   `;
 }
 
-// ELO expected win probability (uses pre-match ratings)
+// ELO expected win probability (uses pre-match ratings) — fallback when no h2h data
 function expectedWinProb(wRating, lRating) {
   return 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
+}
+
+// Build a lookup of historical points scored between every pair of players
+function buildH2H(matches) {
+  const h2h = new Map();
+  for (const m of matches) {
+    if (m.winner_score == null || m.loser_score == null) continue;
+    const a = Math.min(m.winner_id, m.loser_id);
+    const b = Math.max(m.winner_id, m.loser_id);
+    const key = `${a}-${b}`;
+    const entry = h2h.get(key) || { a_pts: 0, b_pts: 0 };
+    if (m.winner_id === a) { entry.a_pts += m.winner_score; entry.b_pts += m.loser_score; }
+    else                   { entry.b_pts += m.winner_score; entry.a_pts += m.loser_score; }
+    h2h.set(key, entry);
+  }
+  return h2h;
+}
+
+// Abramowitz & Stegun approximation of the standard normal CDF (error < 7.5e-8)
+function normalCDF(z) {
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z);
+  const t = 1 / (1 + 0.2316419 * x);
+  const poly = t * (0.319381530 + t * (-0.356563782
+    + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const pdf = Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+  return 0.5 + sign * (0.5 - pdf * poly);
+}
+
+// Win probability via pooled h2h points + binomial normal approximation.
+// Returns null when no cross-pairing history exists (caller falls back to Elo).
+function h2hWinProb(winnerIds, loserIds, h2h) {
+  let winnerPts = 0, totalPts = 0;
+  for (const wId of winnerIds) {
+    for (const lId of loserIds) {
+      const a = Math.min(wId, lId), b = Math.max(wId, lId);
+      const e = h2h.get(`${a}-${b}`);
+      if (!e) continue;
+      winnerPts += (wId === a) ? e.a_pts : e.b_pts;
+      totalPts  += e.a_pts + e.b_pts;
+    }
+  }
+  if (totalPts === 0) return null;
+  const p = winnerPts / totalPts;
+  const sigma = Math.sqrt(totalPts * p * (1 - p));
+  if (sigma === 0) return p >= 0.5 ? 1 : 0;
+  return normalCDF((winnerPts - totalPts / 2) / sigma);
 }
 
 // Generate game tags based on score, probability, and context
@@ -113,6 +160,7 @@ function renderRecent(matches, players) {
 
   const recent = grouped.slice(0, 10);
   const topSeedId = players && players[0] ? players[0].id : null;
+  const h2h = buildH2H(matches);
 
   // Build combo keys preserving team composition (not just player set)
   function comboKey(m, partner) {
@@ -143,9 +191,14 @@ function renderRecent(matches, players) {
       : '<span class="text-muted">—</span>';
     const date = formatDateTime(m.played_at);
 
+    const winnerIds = [m.winner_id, partner?.winner_id].filter(Boolean);
+    const loserIds  = [m.loser_id,  partner?.loser_id ].filter(Boolean);
+    const h2hResult = h2hWinProb(winnerIds, loserIds, h2h);
     const wAvg = partner ? (m.winner_rating_before + partner.winner_rating_before) / 2 : m.winner_rating_before;
     const lAvg = partner ? (m.loser_rating_before  + partner.loser_rating_before)  / 2 : m.loser_rating_before;
-    const prob  = Math.round(expectedWinProb(wAvg, lAvg) * 100);
+    const prob  = h2hResult !== null
+      ? Math.round(h2hResult * 100)
+      : Math.round(expectedWinProb(wAvg, lAvg) * 100);
 
     const tags    = gameTags(m, partner, prob, isRematch, topSeedId);
     const probTag = `<span class="game-tag tag-prob" data-tip="Win probability for the winning team going into this match">📊 Winners: ${prob}%</span>`;
