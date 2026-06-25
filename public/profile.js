@@ -179,8 +179,12 @@ function renderActivity(activity) {
   const map = {};
   let totalGames = 0;
   for (const r of activity) {
-    map[r.day] = { wins: r.wins, losses: r.losses };
-    totalGames += r.wins + r.losses;
+    const localDay = new Date(r.played_at.replace(' ', 'T') + 'Z')
+      .toLocaleDateString('en-CA'); // YYYY-MM-DD in local timezone
+    if (!map[localDay]) map[localDay] = { wins: 0, losses: 0 };
+    if (r.won) map[localDay].wins++;
+    else map[localDay].losses++;
+    totalGames++;
   }
 
   const CELL = 12, GAP = 3, COL = CELL + GAP;
@@ -251,13 +255,13 @@ function renderActivity(activity) {
   }).join('');
 
   // Side stats
-  const activeDays = activity.length;
+  const activeDays = Object.keys(map).length;
   const now = new Date();
-  const thisMonthStr = now.toISOString().slice(0, 7); // "YYYY-MM"
+  const thisMonthStr = now.toLocaleDateString('en-CA').slice(0, 7); // "YYYY-MM" local
   const monthName = now.toLocaleString('en-US', { month: 'long' });
   let monthWins = 0, monthLosses = 0;
-  for (const r of activity) {
-    if (r.day.startsWith(thisMonthStr)) { monthWins += r.wins; monthLosses += r.losses; }
+  for (const [day, data] of Object.entries(map)) {
+    if (day.startsWith(thisMonthStr)) { monthWins += data.wins; monthLosses += data.losses; }
   }
 
   return `
