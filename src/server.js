@@ -162,7 +162,7 @@ app.get('/api/rankings', (req, res) => {
 app.post('/api/players', (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
-  db.run('INSERT INTO players (name) VALUES (?)', [name.trim()], function (err) {
+  db.run('INSERT INTO players (name, rating) VALUES (?, 1500)', [name.trim()], function (err) {
     if (err) return res.status(400).json({ error: 'Player already exists' });
     db.get('SELECT * FROM players WHERE id = ?', [this.lastID], (err, row) => res.json(row));
   });
