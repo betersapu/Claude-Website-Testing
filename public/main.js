@@ -4,11 +4,38 @@ async function fetchData() {
     fetch('/api/matches'),
   ]);
   const players = await rankingsRes.json();
-  renderRankings(players);
-  renderRecent(await matchesRes.json(), players);
+  const matches = await matchesRes.json();
+  const lastPlayed = computeLastPlayed(matches);
+  renderRankings(players, lastPlayed);
+  renderRecent(matches, players);
 }
 
-function renderRankings(players) {
+// Map each player id to the timestamp of their most recent game.
+function computeLastPlayed(matches) {
+  const map = {};
+  for (const m of matches) {
+    for (const id of [m.winner_id, m.loser_id]) {
+      if (!map[id] || m.played_at > map[id]) map[id] = m.played_at;
+    }
+  }
+  return map;
+}
+
+// Whole days since a UTC timestamp ("YYYY-MM-DD HH:MM:SS").
+function daysSince(ts) {
+  if (!ts) return null;
+  const then = new Date(ts.replace(' ', 'T') + 'Z').getTime();
+  return Math.floor((Date.now() - then) / 86400000);
+}
+
+function lastPlayedLabel(ts) {
+  const d = daysSince(ts);
+  if (d === null) return '<span class="text-muted">—</span>';
+  if (d <= 0) return 'Today';
+  return `${d} day${d === 1 ? '' : 's'} ago`;
+}
+
+function renderRankings(players, lastPlayed = {}) {
   const container = document.getElementById('rankings-container');
   if (!players.length) {
     container.innerHTML = '<p class="empty-state">No players yet.</p>';
@@ -30,6 +57,7 @@ function renderRankings(players) {
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>
         <td>${p.wins + p.losses}</td>
         <td><div class="form-dots">${formDots}</div></td>
+        <td class="text-muted" style="white-space:nowrap">${lastPlayedLabel(lastPlayed[p.id])}</td>
       </tr>
     `;
   }).join('');
@@ -45,6 +73,7 @@ function renderRankings(players) {
           <th>Record</th>
           <th>Games</th>
           <th>Form</th>
+          <th>Last Played</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
