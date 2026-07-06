@@ -53,29 +53,10 @@
       <div class="card">
         <h3>Submit Match Result</h3>
         <form id="match-form">
-          <div class="team-section">
-            <div class="team-label win">Winning Team</div>
-            <div class="form-group">
-              <label>Player 1</label>
-              <select id="winner1" required><option value="">Select player…</option></select>
-            </div>
-            <div class="form-group">
-              <label>Player 2</label>
-              <select id="winner2" required><option value="">Select player…</option></select>
-            </div>
-          </div>
-          <div class="team-vs">VS</div>
-          <div class="team-section">
-            <div class="team-label loss">Losing Team</div>
-            <div class="form-group">
-              <label>Player 1</label>
-              <select id="loser1" required><option value="">Select player…</option></select>
-            </div>
-            <div class="form-group">
-              <label>Player 2</label>
-              <select id="loser2" required><option value="">Select player…</option></select>
-            </div>
-          </div>
+          <p class="chip-hint">Tap a player — 1st tap <span class="win">Winner</span>, 2nd tap <span class="loss">Loser</span>, 3rd clears.</p>
+          <div class="chip-grid" id="chip-grid"></div>
+          <div class="chip-summary" id="chip-summary"></div>
+
           <!-- Win probability bar -->
           <div id="prob-row">
             <div class="prob-bar-wrap">

@@ -633,6 +633,84 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
   letter-spacing: 0.1em;
 }
 
+/* Tap-to-assign player chips */
+.chip-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+.chip-hint .win  { color: var(--win);  font-weight: 700; }
+.chip-hint .loss { color: var(--loss); font-weight: 700; }
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 20px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.player-chip:hover { border-color: var(--accent); }
+
+.player-chip.is-winner {
+  background: rgba(0,212,170,0.15);
+  border-color: var(--win);
+  color: var(--win);
+}
+.player-chip.is-loser {
+  background: rgba(255,83,112,0.15);
+  border-color: var(--loss);
+  color: var(--loss);
+}
+
+.chip-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: currentColor;
+  color: var(--surface);
+}
+
+.chip-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  min-height: 1.4rem;
+  flex-wrap: wrap;
+}
+.sum-team.win  { color: var(--win); }
+.sum-team.loss { color: var(--loss); }
+.sum-vs {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* Delete button */
 .btn-edit {
   background: none;

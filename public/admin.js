@@ -115,15 +115,15 @@ function glickoExpected(r1, rd1, r2, rd2) {
 }
 
 function updateProbBar() {
-  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
-  const [w1id, w2id, l1id, l2id] = ids.map(id => +document.getElementById(id).value);
   const row = document.getElementById('prob-row');
+  const winners = selectedIds('W');
+  const losers  = selectedIds('L');
 
-  if (!w1id || !w2id || !l1id || !l2id) { row.style.display = 'none'; return; }
-  if (new Set([w1id, w2id, l1id, l2id]).size !== 4) { row.style.display = 'none'; return; }
+  if (winners.length !== 2 || losers.length !== 2) { row.style.display = 'none'; return; }
 
   const byId = Object.fromEntries(_playersCache.map(p => [p.id, p]));
-  const [w1, w2, l1, l2] = [w1id, w2id, l1id, l2id].map(id => byId[id]);
+  const [w1, w2] = winners.map(id => byId[id]);
+  const [l1, l2] = losers.map(id => byId[id]);
   if (!w1 || !w2 || !l1 || !l2) { row.style.display = 'none'; return; }
 
   // Average team ratings/RDs
@@ -142,30 +142,80 @@ function updateProbBar() {
   row.style.display = 'block';
 }
 
-// ---- Submit match ----
+// ---- Tap-to-assign player chips ----
+// chipState maps a player id -> 'W' (winner) or 'L' (loser). Absent = unselected.
+let chipState = {};
+
+function selectedIds(team) {
+  return Object.keys(chipState).filter(id => chipState[id] === team).map(Number);
+}
+
+// Tap cycles a chip: unselected -> Winner -> Loser -> unselected, respecting the 2-per-team cap.
+function cycleChip(id) {
+  const cur = chipState[id] || null;
+  const winners = selectedIds('W').length;
+  const losers  = selectedIds('L').length;
+
+  if (cur === null) {
+    if (winners < 2) chipState[id] = 'W';
+    else if (losers < 2) chipState[id] = 'L';
+    else showToast('Both teams are full', 'error');
+  } else if (cur === 'W') {
+    if (losers < 2) chipState[id] = 'L';
+    else delete chipState[id];
+  } else {
+    delete chipState[id];
+  }
+  renderChips();
+  updateProbBar();
+}
+
+function renderChips() {
+  const grid = document.getElementById('chip-grid');
+  if (!grid) return;
+  const sorted = [..._playersCache].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  grid.innerHTML = sorted.map(p => {
+    const st = chipState[p.id];
+    const cls = st === 'W' ? 'is-winner' : st === 'L' ? 'is-loser' : '';
+    const tag = st ? `<span class="chip-tag">${st}</span>` : '';
+    return `<button type="button" class="player-chip ${cls}" data-id="${p.id}">${escHtml(p.name)}${tag}</button>`;
+  }).join('');
+
+  grid.querySelectorAll('.player-chip').forEach(el =>
+    el.addEventListener('click', () => cycleChip(+el.dataset.id)));
+
+  renderSummary();
+}
+
+function renderSummary() {
+  const byId = Object.fromEntries(_playersCache.map(p => [p.id, p]));
+  const names = ids => ids.map(id => escHtml(byId[id]?.name || '')).join(' & ') || '—';
+  document.getElementById('chip-summary').innerHTML =
+    `<span class="sum-team win">${names(selectedIds('W'))}</span>` +
+    `<span class="sum-vs">vs</span>` +
+    `<span class="sum-team loss">${names(selectedIds('L'))}</span>`;
+}
+
+// Renders the roster into tappable chips (replaces the old dropdowns).
 function populateSelects(players) {
   _playersCache = players;
-  const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
-  const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
-  const sorted = [...players].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  const opts = sorted.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
-  ids.forEach(id => {
-    document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
-    if (saved[id]) document.getElementById(id).value = saved[id];
-    document.getElementById(id).addEventListener('change', updateProbBar);
-  });
+  // Drop selections for players that no longer exist
+  for (const id of Object.keys(chipState)) {
+    if (!players.some(p => p.id === +id)) delete chipState[id];
+  }
+  renderChips();
   updateProbBar();
 }
 
 document.getElementById('match-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const w1 = +document.getElementById('winner1').value;
-  const w2 = +document.getElementById('winner2').value;
-  const l1 = +document.getElementById('loser1').value;
-  const l2 = +document.getElementById('loser2').value;
+  const winners = selectedIds('W');
+  const losers  = selectedIds('L');
 
-  if (!w1 || !w2 || !l1 || !l2) return showToast('Select all four players', 'error');
-  if (new Set([w1, w2, l1, l2]).size !== 4) return showToast('All four players must be different', 'error');
+  if (winners.length !== 2 || losers.length !== 2)
+    return showToast('Pick 2 winners and 2 losers', 'error');
 
   const ws = document.getElementById('winner-score').value;
   const ls = document.getElementById('loser-score').value;
@@ -173,7 +223,7 @@ document.getElementById('match-form').addEventListener('submit', async (e) => {
   const res = await adminFetch('/api/matches', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ winner_ids: [w1, w2], loser_ids: [l1, l2], winner_score: ws, loser_score: ls }),
+    body: JSON.stringify({ winner_ids: winners, loser_ids: losers, winner_score: ws, loser_score: ls }),
   });
   const data = await res.json();
   if (!res.ok) return showToast(data.error, 'error');
@@ -181,6 +231,7 @@ document.getElementById('match-form').addEventListener('submit', async (e) => {
   const wNames = data.winners.map(p => p.name).join(' & ');
   const lNames = data.losers.map(p => p.name).join(' & ');
   showToast(`${wNames} beat ${lNames}`, 'success');
+  chipState = {};
   document.getElementById('match-form').reset();
   load();
 });
