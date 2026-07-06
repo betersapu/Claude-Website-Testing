@@ -147,7 +147,8 @@ function populateSelects(players) {
   _playersCache = players;
   const ids = ['winner1', 'winner2', 'loser1', 'loser2'];
   const saved = Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
-  const opts = players.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+  const sorted = [...players].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const opts = sorted.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
   ids.forEach(id => {
     document.getElementById(id).innerHTML = `<option value="">Select player…</option>${opts}`;
     if (saved[id]) document.getElementById(id).value = saved[id];
