@@ -101,6 +101,76 @@ function calcGlicko(winners, losers, winnerScore, loserScore) {
   };
 }
 
+// ---- Inactivity decay ----
+// Each full week since a player's last game costs them DECAY_PER_WEEK rating,
+// floored at DECAY_FLOOR. Each drop is recorded in decay_events so it shows in
+// match history. Idempotent: re-running never double-applies.
+const DECAY_PER_WEEK = 50;
+const DECAY_FLOOR = 100;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Stored timestamps are UTC "YYYY-MM-DD HH:MM:SS".
+function parseUTC(ts) { return new Date(ts.replace(' ', 'T') + 'Z').getTime(); }
+function toStamp(ms) { return new Date(ms).toISOString().replace('T', ' ').slice(0, 19); }
+
+function applyDecay(cb = () => {}) {
+  db.all(`SELECT id, rating FROM players`, (err, players) => {
+    if (err) return cb(err);
+    if (!players.length) return cb(null, { applied: 0 });
+    db.all(`SELECT winner_id, loser_id, played_at FROM matches`, (err, matches) => {
+      if (err) return cb(err);
+      db.all(`SELECT player_id, applied_at FROM decay_events`, (err, decays) => {
+        if (err) return cb(err);
+
+        const now = Date.now();
+        const lastMatch = {};
+        for (const m of matches) {
+          const t = parseUTC(m.played_at);
+          for (const pid of [m.winner_id, m.loser_id]) {
+            if (!lastMatch[pid] || t > lastMatch[pid]) lastMatch[pid] = t;
+          }
+        }
+
+        const newEvents = [];
+        const ratingUpdates = {};
+
+        for (const p of players) {
+          const lm = lastMatch[p.id];
+          if (!lm) continue; // never played — don't decay
+          const weeksInactive = Math.floor((now - lm) / WEEK_MS);
+          if (weeksInactive < 1) continue;
+          const alreadyApplied = decays.filter(d => d.player_id === p.id && parseUTC(d.applied_at) > lm).length;
+          if (weeksInactive - alreadyApplied <= 0) continue;
+
+          let current = p.id in ratingUpdates ? ratingUpdates[p.id] : p.rating;
+          for (let k = alreadyApplied + 1; k <= weeksInactive; k++) {
+            const before = current;
+            const after = Math.max(DECAY_FLOOR, before - DECAY_PER_WEEK);
+            if (after === before) break; // hit the floor
+            newEvents.push({ player_id: p.id, amount: after - before, before, after, applied_at: toStamp(lm + k * WEEK_MS) });
+            current = after;
+          }
+          ratingUpdates[p.id] = current;
+        }
+
+        if (!newEvents.length) return cb(null, { applied: 0 });
+
+        db.serialize(() => {
+          db.run('BEGIN TRANSACTION');
+          for (const e of newEvents) {
+            db.run(`INSERT INTO decay_events (player_id, amount, rating_before, rating_after, applied_at) VALUES (?,?,?,?,?)`,
+              [e.player_id, e.amount, e.before, e.after, e.applied_at]);
+          }
+          for (const [pid, rating] of Object.entries(ratingUpdates)) {
+            db.run(`UPDATE players SET rating = ? WHERE id = ?`, [rating, pid]);
+          }
+          db.run('COMMIT', (err) => cb(err, { applied: newEvents.length }));
+        });
+      });
+    });
+  });
+}
+
 // Calculate current win/loss streak for a player from match history
 function calcStreak(playerId, callback) {
   db.all(
@@ -338,11 +408,26 @@ app.get('/api/players/:id/matches', (req, res) => {
      LEFT JOIN players pw ON pw.id = p.winner_id
      LEFT JOIN players pl ON pl.id = p.loser_id
      WHERE (m.winner_id = ? OR m.loser_id = ?)
-     ORDER BY m.played_at DESC LIMIT 20`,
+     ORDER BY m.played_at DESC`,
     [id, id],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+      db.all(
+        `SELECT amount, rating_before, rating_after, applied_at FROM decay_events WHERE player_id = ?`,
+        [id],
+        (err, decays) => {
+          if (err) return res.status(500).json({ error: err.message });
+          const matches = rows.map(r => ({ ...r, type: 'match' }));
+          const decayEntries = (decays || []).map(d => ({
+            type: 'decay', played_at: d.applied_at, amount: d.amount,
+            rating_before: d.rating_before, rating_after: d.rating_after,
+          }));
+          const merged = [...matches, ...decayEntries]
+            .sort((a, b) => b.played_at.localeCompare(a.played_at))
+            .slice(0, 20);
+          res.json(merged);
+        }
+      );
     }
   );
 });
@@ -419,7 +504,10 @@ app.post('/api/recalculate', (req, res) => {
         }
         db.run('COMMIT', (err) => {
           if (err) return res.status(500).json({ error: err.message });
-          res.json({ success: true, players_updated: players.length, matches_updated: updates.length });
+          // Replaying matches resets ratings, so wipe and regenerate decay to stay consistent.
+          db.run('DELETE FROM decay_events', () => {
+            applyDecay(() => res.json({ success: true, players_updated: players.length, matches_updated: updates.length }));
+          });
         });
       });
     });
@@ -455,7 +543,23 @@ app.get('/api/matches', (req, res) => {
      ORDER BY m.played_at DESC`,
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+      db.all(
+        `SELECT d.amount, d.rating_before, d.rating_after, d.applied_at,
+                d.player_id, p.name as player_name
+         FROM decay_events d JOIN players p ON p.id = d.player_id`,
+        (err, decays) => {
+          if (err) return res.status(500).json({ error: err.message });
+          const matches = rows.map(r => ({ ...r, type: 'match' }));
+          const decayEntries = (decays || []).map(d => ({
+            type: 'decay', played_at: d.applied_at,
+            player_id: d.player_id, player_name: d.player_name,
+            amount: d.amount, rating_before: d.rating_before, rating_after: d.rating_after,
+          }));
+          const merged = [...matches, ...decayEntries]
+            .sort((a, b) => b.played_at.localeCompare(a.played_at));
+          res.json(merged);
+        }
+      );
     }
   );
 });
@@ -551,5 +655,15 @@ app.get('/api/players/:id/activity', (req, res) => {
     }
   );
 });
+
+// Apply inactivity decay at startup and every 6 hours thereafter.
+function runDecay() {
+  applyDecay((err, r) => {
+    if (err) console.error('[decay] failed:', err.message);
+    else if (r && r.applied) console.log(`[decay] applied ${r.applied} inactivity event(s)`);
+  });
+}
+runDecay();
+setInterval(runDecay, 6 * 60 * 60 * 1000);
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

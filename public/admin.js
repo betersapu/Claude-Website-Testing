@@ -298,9 +298,10 @@ function renderMatches(matches) {
   const grouped = [];
   const seen = new Set();
   for (const m of matches) {
+    if (m.type === 'decay') { grouped.push({ decay: m }); continue; }
     if (seen.has(m.id)) continue;
     const partner = matches.find(n =>
-      n.id !== m.id && !seen.has(n.id) &&
+      n.type !== 'decay' && n.id !== m.id && !seen.has(n.id) &&
       n.played_at === m.played_at &&
       n.winner_id !== m.winner_id && n.loser_id !== m.loser_id
     );
@@ -319,7 +320,18 @@ function renderMatches(matches) {
         <tr><th>Date</th><th>Winners</th><th>Score</th><th>Losers</th><th>Rating Δ</th><th></th></tr>
       </thead>
       <tbody>
-        ${grouped.map(({ ids, m, partner }) => {
+        ${grouped.map((g) => {
+          if (g.decay) {
+            const d = g.decay;
+            return `
+            <tr>
+              <td class="text-muted" style="white-space:nowrap">${formatDateTime(d.played_at)}</td>
+              <td colspan="3"><span class="decay-tag">💤 Inactivity</span> — <a href="/profile.html?id=${d.player_id}" class="player-link">${escHtml(d.player_name)}</a></td>
+              <td><span class="rating-change down">${d.amount}</span></td>
+              <td></td>
+            </tr>`;
+          }
+          const { ids, m, partner } = g;
           const w2 = partner ? `& <a href="/profile.html?id=${partner.winner_id}" class="player-link">${escHtml(partner.winner_name)}</a>` : '';
           const l2 = partner ? `& <a href="/profile.html?id=${partner.loser_id}" class="player-link">${escHtml(partner.loser_name)}</a>` : '';
           const scoreStr = (m.winner_score != null && m.loser_score != null)

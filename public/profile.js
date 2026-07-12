@@ -314,6 +314,19 @@ function renderMatches(matches, playerId) {
   if (!matches.length) return '<p class="empty-state">No matches yet.</p>';
 
   return matches.map(m => {
+    if (m.type === 'decay') {
+      return `
+      <div class="match-item">
+        <div class="match-item-left">
+          <span class="match-result decay">INACTIVITY</span>
+          <span class="match-teams text-muted">No games this week</span>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <span class="rating-change down">${m.amount}</span>
+          <span class="text-muted" style="margin-left:0.6rem;font-size:0.78rem">${formatDateTime(m.played_at)}</span>
+        </div>
+      </div>`;
+    }
     const won = m.winner_id === playerId;
     const ratingBefore = won ? m.winner_rating_before : m.loser_rating_before;
     const ratingAfter  = won ? m.winner_rating_after  : m.loser_rating_after;

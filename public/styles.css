@@ -494,6 +494,13 @@ tr:has(+ .tags-row) td { border-bottom: none; }
 
 .match-result.win { background: rgba(0,212,170,0.15); color: var(--win); }
 .match-result.loss { background: rgba(255,83,112,0.15); color: var(--loss); }
+.match-result.decay { background: rgba(123,130,168,0.15); color: var(--text-muted); }
+
+.decay-tag {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
 
 .delta-pair {
   display: inline-flex;

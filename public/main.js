@@ -162,6 +162,8 @@ function gameTags(m, partner, prob, isRematch, topSeedId, topSeedName) {
 // Group the two stored rows per doubles game into single games, then show the most recent.
 function renderRecent(matches, players) {
   const el = document.getElementById('recent-container');
+  // "Recent Games" shows games only — inactivity decay appears in match history views.
+  matches = matches.filter(m => m.type !== 'decay');
   if (!matches.length) {
     el.innerHTML = '<p class="empty-state">No games played yet.</p>';
     return;

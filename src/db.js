@@ -40,6 +40,19 @@ db.serialize(() => {
     )
   `);
 
+  // Inactivity decay events: one row each time a player loses rating for a week idle.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS decay_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      rating_before REAL NOT NULL,
+      rating_after REAL NOT NULL,
+      applied_at TEXT NOT NULL,
+      FOREIGN KEY (player_id) REFERENCES players(id)
+    )
+  `);
+
   // Migrations — ignore errors if columns already exist
   db.run(`ALTER TABLE matches ADD COLUMN winner_score INTEGER`, () => {});
   db.run(`ALTER TABLE matches ADD COLUMN loser_score INTEGER`, () => {});
