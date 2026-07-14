@@ -319,7 +319,11 @@ app.get('/api/players/:id', (req, res) => {
   const { id } = req.params;
   db.get(
     `SELECT id, name, rating, peak_rating, wins, losses,
-            CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate
+            CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate,
+            (SELECT ROUND(AVG(winner_score - loser_score), 1) FROM matches
+               WHERE winner_id = players.id AND winner_score IS NOT NULL AND loser_score IS NOT NULL) as avg_win_margin,
+            (SELECT ROUND(AVG(winner_score - loser_score), 1) FROM matches
+               WHERE loser_id = players.id AND winner_score IS NOT NULL AND loser_score IS NOT NULL) as avg_loss_margin
      FROM players WHERE id = ?`,
     [id],
     (err, player) => {

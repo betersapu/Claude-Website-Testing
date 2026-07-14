@@ -121,6 +121,14 @@ function renderProfile(player, rank, history, matches, partners, activity) {
         <div class="stat-value" style="color:var(--loss)">${player.losses}</div>
         <div class="stat-label">Losses</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--win)">${player.avg_win_margin != null ? '+' + player.avg_win_margin : '—'}</div>
+        <div class="stat-label">Avg Win Margin</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--loss)">${player.avg_loss_margin != null ? '−' + player.avg_loss_margin : '—'}</div>
+        <div class="stat-label">Avg Loss Margin</div>
+      </div>
       ${(() => {
         const fav = partners.length
           ? partners.reduce((best, p) => p.wins > best.wins ? p : best)
