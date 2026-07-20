@@ -271,13 +271,13 @@ function renderPlayers(players) {
         ${players.map(p => `
           <tr>
             <td><a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a></td>
-            <td><span class="rating-badge">${p.rating}</span></td>
+            <td><span class="rating-badge">${fmtRating(p.rating)}</span></td>
             <td>${p.wins}</td>
             <td>${p.losses}</td>
             <td class="win-rate">${p.win_rate}%</td>
             <td class="text-muted">${p.wins + p.losses}</td>
             <td style="display:flex;gap:0.4rem;align-items:center">
-              <button class="btn-edit" onclick="openEdit(${p.id},'${escAttr(p.name)}',${p.rating},${p.wins},${p.losses})">Edit</button>
+              <button class="btn-edit" onclick="openEdit(${p.id},'${escAttr(p.name)}',${fmtRating(p.rating)},${p.wins},${p.losses})">Edit</button>
               <button class="btn-delete" onclick="confirmDelete('player',${p.id},'${escAttr(p.name)}')">✕</button>
             </td>
           </tr>
@@ -456,6 +456,11 @@ function escHtml(str) {
 
 function escAttr(str) {
   return String(str).replace(/'/g, "\\'");
+}
+
+// Format a rating to 1 decimal, dropping any float-precision noise and a trailing .0
+function fmtRating(v) {
+  return (+v).toFixed(1).replace(/\.0$/, '');
 }
 
 function formatDateTime(ts) {

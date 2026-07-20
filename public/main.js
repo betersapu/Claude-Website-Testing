@@ -52,7 +52,7 @@ function renderRankings(players, lastPlayed = {}) {
       <tr>
         <td><span class="rank-num ${rankClass}">${rank}</span></td>
         <td><a href="/profile.html?id=${p.id}" class="player-link">${escHtml(p.name)}</a></td>
-        <td><span class="rating-badge">${p.rating}</span></td>
+        <td><span class="rating-badge">${fmtRating(p.rating)}</span></td>
         <td class="win-rate">${p.win_rate}%</td>
         <td class="text-muted">${p.wins}W – ${p.losses}L</td>
         <td>${p.wins + p.losses}</td>
@@ -279,6 +279,11 @@ function renderRecent(matches, players) {
 
 function escHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Format a rating to 1 decimal, dropping any float-precision noise and a trailing .0
+function fmtRating(v) {
+  return (+v).toFixed(1).replace(/\.0$/, '');
 }
 
 function formatDateTime(ts) {
