@@ -59,6 +59,9 @@ db.serialize(() => {
   db.run(`ALTER TABLE players ADD COLUMN rd REAL DEFAULT 350`, () => {});
   db.run(`ALTER TABLE players ADD COLUMN vol REAL DEFAULT 0.06`, () => {});
   db.run(`ALTER TABLE players ADD COLUMN peak_rating REAL`, () => {});
+  // Marks matches that used loss-dampening (Option B). Existing games default to 0
+  // so the change only ever affects games added after this point.
+  db.run(`ALTER TABLE matches ADD COLUMN loss_dampened INTEGER DEFAULT 0`, () => {});
 
   // Always recalculate peak_rating at startup to fix any bad data
   db.all(`SELECT id, rating FROM players`, (err, players) => {

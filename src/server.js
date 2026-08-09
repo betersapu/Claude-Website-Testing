@@ -101,12 +101,33 @@ function calcGlicko(winners, losers, winnerScore, loserScore) {
   };
 }
 
+// ---- Loss dampening (Option B) ----
+// Losers drop only LOSS_DAMPEN of their computed Glicko loss, so win streaks are
+// harder to erase in a single game. Winners' gains are unchanged. Applied only to
+// matches flagged loss_dampened=1 (i.e. games added after this feature went live),
+// never retroactively to existing games.
+const LOSS_DAMPEN = 0.5;
+const DAMPEN_MIN_GAMES = 10; // only players with MORE than this many games get softened losses
+
+// A loser's drop is softened only if they've already played > DAMPEN_MIN_GAMES games
+// (counted before this match). Newer players take the full loss so their rating settles.
+function applyLossDampening(nr, losers, factor = LOSS_DAMPEN) {
+  const adj = (after, before) => Math.round((before + (after - before) * factor) * 10) / 10;
+  const eligible = p => (p.wins + p.losses) > DAMPEN_MIN_GAMES;
+  return {
+    ...nr,
+    l1: nr.l1 && eligible(losers[0]) ? { ...nr.l1, rating: adj(nr.l1.rating, losers[0].rating) } : nr.l1,
+    l2: nr.l2 && losers[1] && eligible(losers[1]) ? { ...nr.l2, rating: adj(nr.l2.rating, losers[1].rating) } : nr.l2,
+  };
+}
+
 // ---- Inactivity decay ----
 // Each full week since a player's last game costs them DECAY_PER_WEEK rating,
 // floored at DECAY_FLOOR. Each drop is recorded in decay_events so it shows in
 // match history. Idempotent: re-running never double-applies.
 const DECAY_PER_WEEK = 50;
 const DECAY_FLOOR = 100;
+const DECAY_TOP_N = 10; // only the top N players by rating are subject to inactivity decay
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Stored timestamps are UTC "YYYY-MM-DD HH:MM:SS".
@@ -131,10 +152,15 @@ function applyDecay(cb = () => {}) {
           }
         }
 
+        // Only the current top N players by rating decay.
+        const top = [...players].sort((a, b) => b.rating - a.rating).slice(0, DECAY_TOP_N);
+        const topIds = new Set(top.map(p => p.id));
+
         const newEvents = [];
         const ratingUpdates = {};
 
         for (const p of players) {
+          if (!topIds.has(p.id)) continue; // outside top N — no decay
           const lm = lastMatch[p.id];
           if (!lm) continue; // never played — don't decay
           const weeksInactive = Math.floor((now - lm) / WEEK_MS);
@@ -276,18 +302,19 @@ app.post('/api/matches', (req, res) => {
     const ws = (winner_score != null && winner_score !== '') ? +winner_score : null;
     const ls = (loser_score  != null && loser_score  !== '') ? +loser_score  : null;
 
-    const newRatings = calcGlicko(winners, losers, ws, ls);
+    // New games use loss-dampening; each row is flagged so it stays consistent on recalculate.
+    const newRatings = applyLossDampening(calcGlicko(winners, losers, ws, ls), losers);
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     db.run(
-      `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened)
+       VALUES (?,?,?,?,?,?,?,?,?,1)`,
       [winners[0].id, losers[0].id, winners[0].rating, losers[0].rating, newRatings.w1.rating, newRatings.l1.rating, ws, ls, now],
       (err) => {
         if (err) return res.status(500).json({ error: err.message });
         db.run(
-          `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened)
+           VALUES (?,?,?,?,?,?,?,?,?,1)`,
           [winners[1].id, losers[1].id, winners[1].rating, losers[1].rating, newRatings.w2.rating, newRatings.l2.rating, ws, ls, now],
           (err) => {
             if (err) return res.status(500).json({ error: err.message });
@@ -475,7 +502,9 @@ app.post('/api/recalculate', (req, res) => {
         const winners = wIds.map(id => ({ id, ...state[id] }));
         const losers  = lIds.map(id => ({ id, ...state[id] }));
 
-        const nr = calcGlicko(winners, losers, m.winner_score, m.loser_score);
+        let nr = calcGlicko(winners, losers, m.winner_score, m.loser_score);
+        // Preserve each game's original scheme: only flagged games get loss-dampening.
+        if (m.loss_dampened) nr = applyLossDampening(nr, losers);
 
         // Primary row
         updates.push({ id: m.id, wBefore: winners[0].rating, wAfter: nr.w1.rating, lBefore: losers[0].rating, lAfter: nr.l1.rating });
