@@ -9,7 +9,7 @@
 <body>
   <nav>
     <a href="/" class="logo">🏓 Pickleball ELO</a>
-    <a href="/">Rankings</a>
+    <a href="/">Leagues</a>
     <a href="/admin.html" class="active">Admin</a>
     <div class="nav-search" id="nav-search">
       <input type="text" id="search-input" placeholder="Search players…" autocomplete="off" />
@@ -40,10 +40,11 @@
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem">
       <div>
         <h1>Admin</h1>
-        <p>Submit results, manage players, and edit data</p>
+        <p>Managing <strong id="admin-league-name">…</strong> — submit results, manage players, edit data</p>
       </div>
-      <div style="display:flex;gap:0.6rem">
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
         <button class="btn btn-secondary" id="export-btn" style="width:auto">⬇ Export Backup</button>
+        <button class="btn btn-danger" id="delete-league-btn" style="width:auto">Delete League</button>
         <button class="btn btn-secondary" id="lock-btn" style="width:auto">Lock</button>
       </div>
     </div>

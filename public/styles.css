@@ -536,6 +536,52 @@ tr:has(+ .tags-row) td { border-bottom: none; }
 .page-header { margin-bottom: 2rem; }
 .page-header p { color: var(--text-muted); margin-top: 0.3rem; font-size: 0.95rem; }
 
+/* Leagues */
+.league-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+.league-card {
+  display: block;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s, transform 0.15s;
+}
+.league-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.league-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.league-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.league-badge.active   { background: rgba(0,212,170,0.15); color: var(--win); border: 1px solid rgba(0,212,170,0.4); }
+.league-badge.archived { background: rgba(123,130,168,0.15); color: var(--text-muted); border: 1px solid rgba(123,130,168,0.3); }
+
+.league-desc { color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin-bottom: 0.75rem; }
+.league-meta { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+
+.league-top { display: flex; flex-direction: column; gap: 0.35rem; }
+.league-top-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.league-top-rank { width: 1.5rem; text-align: center; font-weight: 700; color: var(--text-muted); flex-shrink: 0; }
+.league-top-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.league-card-cta { margin-top: 1rem; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+.archive-toplabel {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 1rem 0 0.75rem;
+}
+
 /* Password gate */
 .lock-card {
   max-width: 380px;

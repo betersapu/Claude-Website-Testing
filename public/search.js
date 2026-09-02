@@ -9,9 +9,12 @@
   updatePlaceholder();
   window.addEventListener('resize', updatePlaceholder);
 
+  const sp = new URLSearchParams(location.search);
+  const leagueId = +sp.get('id') || +sp.get('league') || 1;
+
   let players = [];
   try {
-    const rankRes = await fetch('/api/rankings');
+    const rankRes = await fetch('/api/rankings?league=' + leagueId);
     players = await rankRes.json();
   } catch (e) {}
 

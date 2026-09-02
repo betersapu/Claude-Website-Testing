@@ -54,6 +54,88 @@ app.get('/api/export', (req, res) => {
   });
 });
 
+// ---- Leagues ----
+// List all leagues with player/game counts and their top players.
+app.get('/api/leagues', (req, res) => {
+  db.all(`SELECT * FROM leagues ORDER BY status ASC, created_at DESC`, (err, leagues) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!leagues.length) return res.json([]);
+    db.all(
+      `SELECT league_id, id, name, rating FROM players ORDER BY rating DESC`,
+      (err, players) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const byLeague = {};
+        for (const p of (players || [])) (byLeague[p.league_id] = byLeague[p.league_id] || []).push(p);
+        const result = leagues.map(l => {
+          const ps = byLeague[l.id] || [];
+          return {
+            ...l,
+            player_count: ps.length,
+            top_players: ps.slice(0, 5).map(p => ({ id: p.id, name: p.name, rating: Math.round(p.rating * 10) / 10 })),
+          };
+        });
+        res.json(result);
+      }
+    );
+  });
+});
+
+// Get one league with its top 5 players.
+app.get('/api/leagues/:id', (req, res) => {
+  db.get(`SELECT * FROM leagues WHERE id = ?`, [req.params.id], (err, league) => {
+    if (err || !league) return res.status(404).json({ error: 'League not found' });
+    db.all(
+      `SELECT id, name, rating, wins, losses FROM players WHERE league_id = ? ORDER BY rating DESC LIMIT 5`,
+      [req.params.id],
+      (err, top) => {
+        if (err) return res.status(500).json({ error: err.message });
+        league.top_players = (top || []).map(p => ({ ...p, rating: Math.round(p.rating * 10) / 10 }));
+        res.json(league);
+      }
+    );
+  });
+});
+
+// Create a new (active) league. Protected by the global admin-password guard.
+app.post('/api/leagues', (req, res) => {
+  const { name, description } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'League name required' });
+  db.run(
+    `INSERT INTO leagues (name, description, status) VALUES (?, ?, 'active')`,
+    [name.trim(), (description || '').trim() || null],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      db.get(`SELECT * FROM leagues WHERE id = ?`, [this.lastID], (err, row) => res.json(row));
+    }
+  );
+});
+
+// Archive (or reactivate) a league.
+app.put('/api/leagues/:id', (req, res) => {
+  const { status } = req.body;
+  if (!['active', 'archived'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  db.run(`UPDATE leagues SET status = ? WHERE id = ?`, [status, req.params.id], function (err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: 'League not found' });
+    res.json({ success: true });
+  });
+});
+
+// Delete a league and ALL of its players, matches, and decay events.
+app.delete('/api/leagues/:id', (req, res) => {
+  const { id } = req.params;
+  db.serialize(() => {
+    db.run(`DELETE FROM matches WHERE league_id = ?`, [id]);
+    db.run(`DELETE FROM decay_events WHERE league_id = ?`, [id]);
+    db.run(`DELETE FROM players WHERE league_id = ?`, [id]);
+    db.run(`DELETE FROM leagues WHERE id = ?`, [id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'League not found' });
+      res.json({ success: true });
+    });
+  });
+});
+
 // Glicko-2 settings
 const G2_DEFAULTS = { tau: 0.5, rating: 1500, rd: 350, vol: 0.06 };
 
@@ -135,62 +217,74 @@ function parseUTC(ts) { return new Date(ts.replace(' ', 'T') + 'Z').getTime(); }
 function toStamp(ms) { return new Date(ms).toISOString().replace('T', ' ').slice(0, 19); }
 
 function applyDecay(cb = () => {}) {
-  db.all(`SELECT id, rating FROM players`, (err, players) => {
+  db.all(`SELECT id, rating, league_id FROM players`, (err, players) => {
     if (err) return cb(err);
     if (!players.length) return cb(null, { applied: 0 });
-    db.all(`SELECT winner_id, loser_id, played_at FROM matches`, (err, matches) => {
+    db.all(`SELECT id, status FROM leagues`, (err, leagues) => {
       if (err) return cb(err);
-      db.all(`SELECT player_id, applied_at FROM decay_events`, (err, decays) => {
+      const activeLeagues = new Set((leagues || []).filter(l => l.status === 'active').map(l => l.id));
+
+      // Decay only the top N by rating within each ACTIVE league. Archived leagues are frozen.
+      const topIds = new Set();
+      const byLeague = {};
+      for (const p of players) (byLeague[p.league_id] = byLeague[p.league_id] || []).push(p);
+      for (const [lid, ps] of Object.entries(byLeague)) {
+        if (!activeLeagues.has(+lid)) continue;
+        ps.sort((a, b) => b.rating - a.rating).slice(0, DECAY_TOP_N).forEach(p => topIds.add(p.id));
+      }
+
+      const leagueOf = Object.fromEntries(players.map(p => [p.id, p.league_id]));
+
+      db.all(`SELECT winner_id, loser_id, played_at FROM matches`, (err, matches) => {
         if (err) return cb(err);
+        db.all(`SELECT player_id, applied_at FROM decay_events`, (err, decays) => {
+          if (err) return cb(err);
 
-        const now = Date.now();
-        const lastMatch = {};
-        for (const m of matches) {
-          const t = parseUTC(m.played_at);
-          for (const pid of [m.winner_id, m.loser_id]) {
-            if (!lastMatch[pid] || t > lastMatch[pid]) lastMatch[pid] = t;
+          const now = Date.now();
+          const lastMatch = {};
+          for (const m of matches) {
+            const t = parseUTC(m.played_at);
+            for (const pid of [m.winner_id, m.loser_id]) {
+              if (!lastMatch[pid] || t > lastMatch[pid]) lastMatch[pid] = t;
+            }
           }
-        }
 
-        // Only the current top N players by rating decay.
-        const top = [...players].sort((a, b) => b.rating - a.rating).slice(0, DECAY_TOP_N);
-        const topIds = new Set(top.map(p => p.id));
+          const newEvents = [];
+          const ratingUpdates = {};
 
-        const newEvents = [];
-        const ratingUpdates = {};
+          for (const p of players) {
+            if (!topIds.has(p.id)) continue; // outside top N of an active league — no decay
+            const lm = lastMatch[p.id];
+            if (!lm) continue; // never played — don't decay
+            const weeksInactive = Math.floor((now - lm) / WEEK_MS);
+            if (weeksInactive < 1) continue;
+            const alreadyApplied = decays.filter(d => d.player_id === p.id && parseUTC(d.applied_at) > lm).length;
+            if (weeksInactive - alreadyApplied <= 0) continue;
 
-        for (const p of players) {
-          if (!topIds.has(p.id)) continue; // outside top N — no decay
-          const lm = lastMatch[p.id];
-          if (!lm) continue; // never played — don't decay
-          const weeksInactive = Math.floor((now - lm) / WEEK_MS);
-          if (weeksInactive < 1) continue;
-          const alreadyApplied = decays.filter(d => d.player_id === p.id && parseUTC(d.applied_at) > lm).length;
-          if (weeksInactive - alreadyApplied <= 0) continue;
-
-          let current = p.id in ratingUpdates ? ratingUpdates[p.id] : p.rating;
-          for (let k = alreadyApplied + 1; k <= weeksInactive; k++) {
-            const before = current;
-            const after = Math.max(DECAY_FLOOR, before - DECAY_PER_WEEK);
-            if (after === before) break; // hit the floor
-            newEvents.push({ player_id: p.id, amount: after - before, before, after, applied_at: toStamp(lm + k * WEEK_MS) });
-            current = after;
+            let current = p.id in ratingUpdates ? ratingUpdates[p.id] : p.rating;
+            for (let k = alreadyApplied + 1; k <= weeksInactive; k++) {
+              const before = current;
+              const after = Math.max(DECAY_FLOOR, before - DECAY_PER_WEEK);
+              if (after === before) break; // hit the floor
+              newEvents.push({ player_id: p.id, amount: after - before, before, after, applied_at: toStamp(lm + k * WEEK_MS), league_id: leagueOf[p.id] });
+              current = after;
+            }
+            ratingUpdates[p.id] = current;
           }
-          ratingUpdates[p.id] = current;
-        }
 
-        if (!newEvents.length) return cb(null, { applied: 0 });
+          if (!newEvents.length) return cb(null, { applied: 0 });
 
-        db.serialize(() => {
-          db.run('BEGIN TRANSACTION');
-          for (const e of newEvents) {
-            db.run(`INSERT INTO decay_events (player_id, amount, rating_before, rating_after, applied_at) VALUES (?,?,?,?,?)`,
-              [e.player_id, e.amount, e.before, e.after, e.applied_at]);
-          }
-          for (const [pid, rating] of Object.entries(ratingUpdates)) {
-            db.run(`UPDATE players SET rating = ? WHERE id = ?`, [rating, pid]);
-          }
-          db.run('COMMIT', (err) => cb(err, { applied: newEvents.length }));
+          db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            for (const e of newEvents) {
+              db.run(`INSERT INTO decay_events (player_id, amount, rating_before, rating_after, applied_at, league_id) VALUES (?,?,?,?,?,?)`,
+                [e.player_id, e.amount, e.before, e.after, e.applied_at, e.league_id]);
+            }
+            for (const [pid, rating] of Object.entries(ratingUpdates)) {
+              db.run(`UPDATE players SET rating = ? WHERE id = ?`, [rating, pid]);
+            }
+            db.run('COMMIT', (err) => cb(err, { applied: newEvents.length }));
+          });
         });
       });
     });
@@ -217,12 +311,14 @@ function calcStreak(playerId, callback) {
   );
 }
 
-// Get all players ranked by rating
+// Get all players ranked by rating (scoped to a league)
 app.get('/api/rankings', (req, res) => {
+  const leagueId = +req.query.league || 1;
   db.all(
     `SELECT id, name, rating, rd, peak_rating, wins, losses,
             CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate
-     FROM players ORDER BY rating DESC`,
+     FROM players WHERE league_id = ? ORDER BY rating DESC`,
+    [leagueId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!rows.length) return res.json(rows);
@@ -254,11 +350,12 @@ app.get('/api/rankings', (req, res) => {
   );
 });
 
-// Add a player
+// Add a player to a league
 app.post('/api/players', (req, res) => {
   const { name } = req.body;
+  const leagueId = +req.body.league_id || 1;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
-  db.run('INSERT INTO players (name, rating) VALUES (?, 1500)', [name.trim()], function (err) {
+  db.run('INSERT INTO players (name, rating, league_id) VALUES (?, 1500, ?)', [name.trim(), leagueId], function (err) {
     if (err) return res.status(400).json({ error: 'Player already exists' });
     db.get('SELECT * FROM players WHERE id = ?', [this.lastID], (err, row) => res.json(row));
   });
@@ -299,6 +396,12 @@ app.post('/api/matches', (req, res) => {
     const winners = winner_ids.map(id => byId[id]);
     const losers  = loser_ids.map(id => byId[id]);
 
+    // All four players must belong to the same league.
+    const leagueId = winners[0].league_id;
+    if (players.some(p => p.league_id !== leagueId)) {
+      return res.status(400).json({ error: 'All players must be in the same league' });
+    }
+
     const ws = (winner_score != null && winner_score !== '') ? +winner_score : null;
     const ls = (loser_score  != null && loser_score  !== '') ? +loser_score  : null;
 
@@ -307,15 +410,15 @@ app.post('/api/matches', (req, res) => {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     db.run(
-      `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened)
-       VALUES (?,?,?,?,?,?,?,?,?,1)`,
-      [winners[0].id, losers[0].id, winners[0].rating, losers[0].rating, newRatings.w1.rating, newRatings.l1.rating, ws, ls, now],
+      `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened, league_id)
+       VALUES (?,?,?,?,?,?,?,?,?,1,?)`,
+      [winners[0].id, losers[0].id, winners[0].rating, losers[0].rating, newRatings.w1.rating, newRatings.l1.rating, ws, ls, now, leagueId],
       (err) => {
         if (err) return res.status(500).json({ error: err.message });
         db.run(
-          `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened)
-           VALUES (?,?,?,?,?,?,?,?,?,1)`,
-          [winners[1].id, losers[1].id, winners[1].rating, losers[1].rating, newRatings.w2.rating, newRatings.l2.rating, ws, ls, now],
+          `INSERT INTO matches (winner_id, loser_id, winner_rating_before, loser_rating_before, winner_rating_after, loser_rating_after, winner_score, loser_score, played_at, loss_dampened, league_id)
+           VALUES (?,?,?,?,?,?,?,?,?,1,?)`,
+          [winners[1].id, losers[1].id, winners[1].rating, losers[1].rating, newRatings.w2.rating, newRatings.l2.rating, ws, ls, now, leagueId],
           (err) => {
             if (err) return res.status(500).json({ error: err.message });
 
@@ -345,7 +448,7 @@ app.post('/api/matches', (req, res) => {
 app.get('/api/players/:id', (req, res) => {
   const { id } = req.params;
   db.get(
-    `SELECT id, name, rating, peak_rating, wins, losses,
+    `SELECT id, name, rating, peak_rating, wins, losses, league_id,
             CASE WHEN (wins + losses) > 0 THEN ROUND(wins * 100.0 / (wins + losses), 1) ELSE 0 END as win_rate,
             (SELECT ROUND(AVG(winner_score - loser_score), 1) FROM matches
                WHERE winner_id = players.id AND winner_score IS NOT NULL AND loser_score IS NOT NULL) as avg_win_margin,
@@ -465,10 +568,11 @@ app.get('/api/players/:id/matches', (req, res) => {
 
 // Recalculate all ratings from scratch using current formula
 app.post('/api/recalculate', (req, res) => {
-  db.all(`SELECT * FROM players`, (err, players) => {
+  const leagueId = +req.query.league || 1;
+  db.all(`SELECT * FROM players WHERE league_id = ?`, [leagueId], (err, players) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    db.all(`SELECT * FROM matches ORDER BY played_at ASC, id ASC`, (err, matches) => {
+    db.all(`SELECT * FROM matches WHERE league_id = ? ORDER BY played_at ASC, id ASC`, [leagueId], (err, matches) => {
       if (err) return res.status(500).json({ error: err.message });
 
       // Reset all player state
@@ -538,7 +642,7 @@ app.post('/api/recalculate', (req, res) => {
         db.run('COMMIT', (err) => {
           if (err) return res.status(500).json({ error: err.message });
           // Replaying matches resets ratings, so wipe and regenerate decay to stay consistent.
-          db.run('DELETE FROM decay_events', () => {
+          db.run('DELETE FROM decay_events WHERE league_id = ?', [leagueId], () => {
             applyDecay(() => res.json({ success: true, players_updated: players.length, matches_updated: updates.length }));
           });
         });
@@ -564,6 +668,7 @@ app.put('/api/players/:id', (req, res) => {
 
 // Get all matches
 app.get('/api/matches', (req, res) => {
+  const leagueId = +req.query.league || 1;
   db.all(
     `SELECT m.id, m.played_at, m.winner_score, m.loser_score,
             w.id as winner_id, w.name as winner_name,
@@ -573,13 +678,17 @@ app.get('/api/matches', (req, res) => {
      FROM matches m
      JOIN players w ON w.id = m.winner_id
      JOIN players l ON l.id = m.loser_id
+     WHERE m.league_id = ?
      ORDER BY m.played_at DESC`,
+    [leagueId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       db.all(
         `SELECT d.amount, d.rating_before, d.rating_after, d.applied_at,
                 d.player_id, p.name as player_name
-         FROM decay_events d JOIN players p ON p.id = d.player_id`,
+         FROM decay_events d JOIN players p ON p.id = d.player_id
+         WHERE d.league_id = ?`,
+        [leagueId],
         (err, decays) => {
           if (err) return res.status(500).json({ error: err.message });
           const matches = rows.map(r => ({ ...r, type: 'match' }));

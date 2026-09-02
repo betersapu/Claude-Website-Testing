@@ -54,6 +54,10 @@ document.getElementById('lock-btn').addEventListener('click', () => {
   showGate();
 });
 
+document.getElementById('delete-league-btn').addEventListener('click', () => {
+  confirmDelete('league', LEAGUE_ID, leagueName || 'this');
+});
+
 // Download a backup copy of the live database
 document.getElementById('export-btn').addEventListener('click', async () => {
   try {
@@ -93,13 +97,23 @@ async function adminFetch(url, options = {}) {
 }
 
 // ---- Data loading ----
+const LEAGUE_ID = +new URLSearchParams(location.search).get('league') || 1;
+let leagueName = '';
+
 async function load() {
-  const [playersRes, matchesRes] = await Promise.all([
-    fetch('/api/rankings'),
-    fetch('/api/matches'),
+  const [playersRes, matchesRes, leagueRes] = await Promise.all([
+    fetch('/api/rankings?league=' + LEAGUE_ID),
+    fetch('/api/matches?league=' + LEAGUE_ID),
+    fetch('/api/leagues/' + LEAGUE_ID),
   ]);
   const players = await playersRes.json();
   const matches = await matchesRes.json();
+  if (leagueRes.ok) {
+    const lg = await leagueRes.json();
+    leagueName = lg.name;
+    const el = document.getElementById('admin-league-name');
+    if (el) el.textContent = lg.name;
+  }
   renderPlayers(players);
   renderMatches(matches);
   populateSelects(players);
@@ -245,7 +259,7 @@ document.getElementById('add-player-form').addEventListener('submit', async (e) 
   const res = await adminFetch('/api/players', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, league_id: LEAGUE_ID }),
   });
   const data = await res.json();
   if (!res.ok) return showToast(data.error, 'error');
@@ -400,8 +414,9 @@ let pendingDelete = null;
 
 function confirmDelete(type, id, label) {
   pendingDelete = { type, id };
-  const msg = type === 'player'
-    ? `Delete ${label}? This will also remove all their match history.`
+  const msg =
+    type === 'player' ? `Delete ${label}? This will also remove all their match history.`
+    : type === 'league' ? `Delete the entire "${label}" league? This permanently removes ALL of its players, matches, and history, and cannot be undone.`
     : `Delete this match? Player ratings and records will be reversed.`;
   document.getElementById('modal-msg').textContent = msg;
   document.getElementById('confirm-modal').classList.add('show');
@@ -418,6 +433,13 @@ document.getElementById('modal-confirm').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) return showToast(data.error, 'error');
     showToast('Player deleted', 'success');
+  } else if (type === 'league') {
+    const res = await adminFetch(`/api/leagues/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) return showToast(data.error, 'error');
+    showToast('League deleted', 'success');
+    setTimeout(() => { location.href = '/'; }, 800); // league is gone — return to home
+    return;
   } else {
     const ids = Array.isArray(id) ? id : [id];
     for (const mid of ids) {

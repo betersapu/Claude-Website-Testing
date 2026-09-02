@@ -3,44 +3,61 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pickleball ELO</title>
+  <title>Pickleball ELO – Leagues</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <nav>
     <a href="/" class="logo">🏓 Pickleball ELO</a>
-    <a href="/" class="active">Rankings</a>
-    <a href="/admin.html">Admin</a>
-    <div class="nav-search" id="nav-search">
-      <input type="text" id="search-input" placeholder="Search players…" autocomplete="off" />
-      <div class="nav-search-dropdown" id="search-dropdown"></div>
-    </div>
+    <a href="/" class="active">Leagues</a>
+    <a href="/archive.html">Archive</a>
   </nav>
 
   <div class="container">
-    <div class="page-header">
-      <h1>Rankings</h1>
-      <p>Friend group pickleball — ELO-rated doubles</p>
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem">
+      <div>
+        <h1>Leagues</h1>
+        <p>Pick an active league, or start a new season.</p>
+      </div>
+      <button class="btn btn-primary" id="new-league-btn" style="width:auto">+ New League</button>
     </div>
 
-    <!-- Rankings table (read-only) -->
-    <div class="card" style="margin-bottom:1.5rem">
-      <h3>Leaderboard</h3>
-      <div id="rankings-container">
-        <p class="loading">Loading rankings…</p>
-      </div>
+    <div id="active-leagues">
+      <p class="loading">Loading leagues…</p>
     </div>
 
-    <!-- Recent games (read-only) -->
-    <div class="card">
-      <h3>Recent Games</h3>
-      <div id="recent-container">
-        <p class="loading">Loading games…</p>
-      </div>
+    <p class="text-muted" style="margin-top:1.5rem;font-size:0.9rem">
+      Looking for past seasons? <a href="/archive.html" class="player-link">View the archive →</a>
+    </p>
+  </div>
+
+  <!-- Create league modal -->
+  <div class="modal-overlay" id="create-modal">
+    <div class="modal" style="max-width:440px">
+      <h3 style="margin-bottom:1.25rem;font-size:1rem">Create New League</h3>
+      <form id="create-form">
+        <div class="form-group">
+          <label>League Name</label>
+          <input type="text" id="league-name-input" placeholder="e.g. Fall 2026 League" required />
+        </div>
+        <div class="form-group">
+          <label>Description <span class="text-muted">(optional)</span></label>
+          <input type="text" id="league-desc-input" placeholder="A short blurb about the season" />
+        </div>
+        <div class="form-group">
+          <label>Admin Password</label>
+          <input type="password" id="league-pw-input" placeholder="Password" autocomplete="current-password" required />
+        </div>
+        <p id="create-error" class="gate-error"></p>
+        <div style="display:flex;gap:0.75rem;margin-top:0.5rem">
+          <button type="submit" class="btn btn-primary">Create</button>
+          <button type="button" class="btn btn-secondary" id="create-cancel">Cancel</button>
+        </div>
+      </form>
     </div>
   </div>
 
-  <script src="main.js"></script>
-  <script src="search.js"></script>
+  <div class="toast" id="toast"></div>
+  <script src="leagues.js"></script>
 </body>
 </html>

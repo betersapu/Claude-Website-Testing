@@ -1,10 +1,27 @@
+const LEAGUE_ID = +new URLSearchParams(location.search).get('id') || 1;
+
 async function fetchData() {
-  const [rankingsRes, matchesRes] = await Promise.all([
-    fetch('/api/rankings'),
-    fetch('/api/matches'),
+  const [rankingsRes, matchesRes, leagueRes] = await Promise.all([
+    fetch('/api/rankings?league=' + LEAGUE_ID),
+    fetch('/api/matches?league=' + LEAGUE_ID),
+    fetch('/api/leagues/' + LEAGUE_ID),
   ]);
   const players = await rankingsRes.json();
   const matches = await matchesRes.json();
+
+  // League header + admin link
+  if (leagueRes.ok) {
+    const lg = await leagueRes.json();
+    const nameEl = document.getElementById('league-name');
+    const subEl = document.getElementById('league-sub');
+    if (nameEl) nameEl.textContent = lg.name;
+    if (subEl) subEl.textContent = lg.status === 'archived'
+      ? 'Archived season · standings frozen'
+      : 'ELO-rated doubles';
+  }
+  const adminLink = document.getElementById('admin-link');
+  if (adminLink) adminLink.href = '/admin.html?league=' + LEAGUE_ID;
+
   const lastPlayed = computeLastPlayed(matches);
   renderRankings(players, lastPlayed);
   renderRecent(matches, players);

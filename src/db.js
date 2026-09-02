@@ -53,6 +53,17 @@ db.serialize(() => {
     )
   `);
 
+  // Leagues: each is an independent competition with its own players/matches.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS leagues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // Migrations — ignore errors if columns already exist
   db.run(`ALTER TABLE matches ADD COLUMN winner_score INTEGER`, () => {});
   db.run(`ALTER TABLE matches ADD COLUMN loser_score INTEGER`, () => {});
@@ -62,6 +73,23 @@ db.serialize(() => {
   // Marks matches that used loss-dampening (Option B). Existing games default to 0
   // so the change only ever affects games added after this point.
   db.run(`ALTER TABLE matches ADD COLUMN loss_dampened INTEGER DEFAULT 0`, () => {});
+  // Scope every player/match/decay to a league. Existing rows default to league 1.
+  db.run(`ALTER TABLE players ADD COLUMN league_id INTEGER DEFAULT 1`, () => {});
+  db.run(`ALTER TABLE matches ADD COLUMN league_id INTEGER DEFAULT 1`, () => {});
+  db.run(`ALTER TABLE decay_events ADD COLUMN league_id INTEGER DEFAULT 1`, () => {});
+
+  // Seed league 1 = the archived Summer 2026 League (the original data) if not present.
+  db.get(`SELECT COUNT(*) AS c FROM leagues`, (err, row) => {
+    if (err || (row && row.c > 0)) return;
+    db.run(
+      `INSERT INTO leagues (id, name, description, status) VALUES (1, ?, ?, 'archived')`,
+      [
+        'Summer 2026 League',
+        'The inaugural Summer 2026 pickleball league — where it all began. ' +
+        'This season is now archived: its final standings are frozen and no longer subject to inactivity decay.',
+      ]
+    );
+  });
 
   // Always recalculate peak_rating at startup to fix any bad data
   db.all(`SELECT id, rating FROM players`, (err, players) => {
