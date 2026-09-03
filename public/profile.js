@@ -29,6 +29,10 @@ async function loadProfile() {
 
   document.title = `${player.name} – Pickleball ELO`;
 
+  // Back arrow returns to this player's league leaderboard, not the home page.
+  const backLink = document.getElementById('back-link');
+  if (backLink) backLink.href = '/league.html?id=' + (player.league_id || 1);
+
   // Rank is computed within the player's own league.
   const rankRes = await fetch('/api/rankings?league=' + (player.league_id || 1));
   const rankings = await rankRes.json();
