@@ -58,6 +58,20 @@ document.getElementById('delete-league-btn').addEventListener('click', () => {
   confirmDelete('league', LEAGUE_ID, leagueName || 'this');
 });
 
+// Replay every game in this league through the current rating formula.
+document.getElementById('recalc-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('recalc-btn');
+  btn.disabled = true;
+  btn.textContent = 'Recalculating…';
+  const res = await adminFetch('/api/recalculate?league=' + LEAGUE_ID, { method: 'POST' });
+  btn.disabled = false;
+  btn.textContent = '↻ Recalculate';
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error || 'Recalculate failed', 'error');
+  showToast(`Recalculated ${data.matches_updated} games`, 'success');
+  load();
+});
+
 // Download a backup copy of the live database
 document.getElementById('export-btn').addEventListener('click', async () => {
   try {

@@ -143,30 +143,23 @@ function makeGlicko() {
   return new Glicko2(G2_DEFAULTS);
 }
 
-// Score margin multiplier: 1.0 (no score) up to ~1.5 (blowout)
-function marginMultiplier(winnerScore, loserScore) {
-  if (winnerScore == null || loserScore == null) return 1;
-  const margin = Math.max(1, winnerScore - loserScore);
-  return 1 + 0.5 * Math.log(1 + margin) / Math.log(2);
-}
-
 // Calculate new Glicko-2 ratings for a doubles match.
 // Returns { w1, w2, l1, l2 } each with { rating, rd, vol }
 function calcGlicko(winners, losers, winnerScore, loserScore) {
   const glicko = makeGlicko();
-  const mult = marginMultiplier(winnerScore, loserScore);
 
   const gw1 = glicko.makePlayer(winners[0].rating, winners[0].rd, winners[0].vol);
   const gw2 = winners[1] ? glicko.makePlayer(winners[1].rating, winners[1].rd, winners[1].vol) : null;
   const gl1 = glicko.makePlayer(losers[0].rating, losers[0].rd, losers[0].vol);
   const gl2 = losers[1] ? glicko.makePlayer(losers[1].rating, losers[1].rd, losers[1].vol) : null;
 
-  // Each winner plays each loser (weighted by margin multiplier via score 1 vs 0)
+  // One entry per winner–loser matchup. updateRatings() applies each result to BOTH
+  // players, so we must NOT also add the reverse [loser, winner, 0] — that would
+  // double-count every game and roughly double the rating swing.
   const matches = [];
   for (const gw of [gw1, gw2].filter(Boolean)) {
     for (const gl of [gl1, gl2].filter(Boolean)) {
       matches.push([gw, gl, 1]);   // winner beat loser
-      matches.push([gl, gw, 0]);   // loser lost to winner
     }
   }
 
